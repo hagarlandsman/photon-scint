@@ -1,0 +1,10 @@
+git status
+git add -A
+git commit -m "Describe what changed"
+git push
+
+
+# one command:
+git commit -am "Quick update"
+git push
+
