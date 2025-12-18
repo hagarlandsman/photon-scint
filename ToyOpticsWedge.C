@@ -165,9 +165,14 @@ struct PhotonResult
 // Optics + geometry helpers
 // -----------------------------
 static inline bool InsideActiveVolume(double x, double y, double z,
-                                      double L, double W, double T,
                                       const OpticsConfig &cfg)
 {
+
+    double L = cfg.L;
+    double T = cfg.T;
+    double W = cfg.W;
+    int wrap = cfg.wrap;
+
     if (z < -T / 2.0 || z > T / 2.0)
         return false;
 
@@ -237,9 +242,12 @@ static inline double WedgeYMax(double x, double L, double W, double Lg, double w
     }
 }
 static inline bool InsideWedgeAperture(double x, double y, double z,
-                                       double L, double W, double T,
                                        const OpticsConfig &cfg)
 {
+    double L = cfg.L;
+    double T = cfg.T;
+    double W = cfg.W;
+    int wrap = cfg.wrap;
     const double eps = 1e-9;
     if (std::fabs(z) > T / 2.0 + eps)
         return false;
@@ -282,19 +290,17 @@ PhotonResult PropagateOnePhoton(
     TRandom3 &rng,
     const Vec3 &sitePos,
     int site_number,
-    double L, double W, double T,
-    int wrap,
     const OpticsConfig &cfg)
 {
     PhotonResult r;
-    r.L = L;
-    r.W = W;
-    r.T = T;
-    r.wrap = wrap;
     r.site_number = site_number;
     r.x0 = sitePos.x;
     r.y0 = sitePos.y;
     r.z0 = sitePos.z;
+    double L = cfg.L;
+    double T = cfg.T;
+    double W = cfg.W;
+    int wrap = cfg.wrap;
 
     const int PTFE = (wrap == 1);
     const int mylar = (wrap == 2);
@@ -525,7 +531,7 @@ PhotonResult PropagateOnePhoton(
             r.yPath.push_back((float)pos.y);
             r.zPath.push_back((float)pos.z);
         }
-        if (!InsideActiveVolume(pos.x, pos.y, pos.z, L, W, T, cfg))
+        if (!InsideActiveVolume(pos.x, pos.y, pos.z, cfg))
         {
             r.escaped = 1;
             r.endPlane = plane;
@@ -535,7 +541,7 @@ PhotonResult PropagateOnePhoton(
         // End planes: detection
         if (plane == 0 || plane == 1)
         {
-            if (!InsideWedgeAperture(pos.x, pos.y, pos.z, L, W, T, cfg))
+            if (!InsideWedgeAperture(pos.x, pos.y, pos.z, cfg))
             {
                 r.escaped = 1;
                 r.endPlane = plane;
@@ -625,16 +631,13 @@ PhotonResult PropagateOnePhoton(
 class TreeWriter
 {
 public:
-    TreeWriter(const char *outFile, bool savePath)
-        : savePath_(savePath)
+    TreeWriter(const char *outFile, const OpticsConfig &cfg)
+        : cfg_(cfg), savePath_(cfg.savePath)
+
     {
         fout_ = new TFile(outFile, "RECREATE");
         t_ = new TTree("tPhot", "Toy optical photon transport");
 
-        t_->Branch("L", &r_.L, "L/D");
-        t_->Branch("W", &r_.W, "W/D");
-        t_->Branch("T", &r_.T, "T/D");
-        t_->Branch("wrap", &r_.wrap, "wrap/I");
         t_->Branch("site_number", &r_.site_number, "site_number/I");
 
         t_->Branch("x0", &r_.x0, "x0/D");
@@ -664,11 +667,44 @@ public:
             t_->Branch("yPath", &r_.yPath);
             t_->Branch("zPath", &r_.zPath);
         }
+                // 2) Add config branches (repeated per entry)
+        // geometry + wrap live in cfg now (if you do your refactor)
+        t_->Branch("cfg_L", &cfg_L_, "cfg_L/D");
+        t_->Branch("cfg_W", &cfg_W_, "cfg_W/D");
+        t_->Branch("cfg_T", &cfg_T_, "cfg_T/D");
+        t_->Branch("cfg_wrap", &cfg_wrap_, "cfg_wrap/I");
+
+        t_->Branch("cfg_nScint", &cfg_nScint_, "cfg_nScint/D");
+        t_->Branch("cfg_nOut", &cfg_nOut_, "cfg_nOut/D");
+        t_->Branch("cfg_absLen", &cfg_absLen_, "cfg_absLen/D");
+        t_->Branch("cfg_Rwrap", &cfg_Rwrap_, "cfg_Rwrap/D");
+        t_->Branch("cfg_maxSteps", &cfg_maxSteps_, "cfg_maxSteps/I");
+
+        t_->Branch("cfg_rPMT", &cfg_rPMT_, "cfg_rPMT/D");
+        t_->Branch("cfg_epsCouple", &cfg_epsCouple_, "cfg_epsCouple/D");
+        t_->Branch("cfg_pde", &cfg_pde_, "cfg_pde/D");
+
+        t_->Branch("cfg_eps0", &cfg_eps0_, "cfg_eps0/D");
+        t_->Branch("cfg_lambdaC", &cfg_lambdaC_, "cfg_lambdaC/D");
+
+        t_->Branch("cfg_savePath", &cfg_savePath_, "cfg_savePath/I");
+
+        t_->Branch("cfg_useWedge", &cfg_useWedge_, "cfg_useWedge/I");
+        t_->Branch("cfg_wedgeLen", &cfg_wedgeLen_, "cfg_wedgeLen/D");
+        t_->Branch("cfg_wedgeTipW", &cfg_wedgeTipW_, "cfg_wedgeTipW/D");
+
+        // freeze the config values once
+        CopyCfgToBranchScalars_();
+
+
     }
 
     void Fill(const PhotonResult &in)
     {
         r_ = in;
+              // ensure cfg scalars are set (cheap; safe if you ever mutate cfg_)
+        // you can remove this call if you guarantee cfg_ never changes
+        CopyCfgToBranchScalars_();
         if (!savePath_)
         {
             r_.xPath.clear();
@@ -689,10 +725,55 @@ public:
     }
 
 private:
+    void CopyCfgToBranchScalars_()
+    {
+        cfg_L_ = cfg_.L;
+        cfg_W_ = cfg_.W;
+        cfg_T_ = cfg_.T;
+        cfg_wrap_ = cfg_.wrap;
+
+        cfg_nScint_ = cfg_.nScint;
+        cfg_nOut_ = cfg_.nOut;
+        cfg_absLen_ = cfg_.absLen;
+        cfg_Rwrap_ = cfg_.Rwrap;
+        cfg_maxSteps_ = cfg_.maxSteps;
+
+        cfg_rPMT_ = cfg_.rPMT;
+        cfg_epsCouple_ = cfg_.epsCouple;
+        cfg_pde_ = cfg_.pde;
+
+        cfg_eps0_ = cfg_.eps0;
+        cfg_lambdaC_ = cfg_.lambdaC;
+
+        cfg_savePath_ = cfg_.savePath ? 1 : 0;
+
+        cfg_useWedge_ = cfg_.useWedge ? 1 : 0;
+        cfg_wedgeLen_ = cfg_.wedgeLen;
+        cfg_wedgeTipW_ = cfg_.wedgeTipW;
+    }
+
     TFile *fout_ = nullptr;
     TTree *t_ = nullptr;
+
     PhotonResult r_;
+    OpticsConfig cfg_;
     bool savePath_ = false;
+
+    // scalars used as branch addresses
+    double cfg_L_ = 0, cfg_W_ = 0, cfg_T_ = 0;
+    int cfg_wrap_ = 1;
+
+    double cfg_nScint_ = 0, cfg_nOut_ = 0;
+    double cfg_absLen_ = 0, cfg_Rwrap_ = 0;
+    int cfg_maxSteps_ = 0;
+
+    double cfg_rPMT_ = 0, cfg_epsCouple_ = 0, cfg_pde_ = 0;
+
+    double cfg_eps0_ = 0, cfg_lambdaC_ = 0;
+    int cfg_savePath_ = 0;
+
+    int cfg_useWedge_ = 0;
+    double cfg_wedgeLen_ = 0, cfg_wedgeTipW_ = 0;
 };
 
 // -----------------------------
@@ -701,14 +782,15 @@ private:
 void RunManySites(
     long long Nsites,
     long long NphotPerSite,
-    double L, double W, double T,
-    int wrap,
     const OpticsConfig &cfg,
     const char *outFile = "toyOptics.root")
 {
     TRandom3 rng(0);
-    TreeWriter wr(outFile, cfg.savePath);
-
+    TreeWriter wr(outFile, cfg);
+    double L = cfg.L;
+    double T = cfg.T;
+    double W = cfg.W;
+    int wrap = cfg.wrap;
     long long nDet = 0;
     for (long long j = 0; j < Nsites; j++)
     {
@@ -721,11 +803,11 @@ void RunManySites(
                 rng.Uniform(0.0, L),
                 rng.Uniform(-W / 2.0, W / 2.0),
                 rng.Uniform(-T / 2.0, T / 2.0));
-        } while (!InsideActiveVolume(site.x, site.y, site.z, L, W, T, cfg));
+        } while (!InsideActiveVolume(site.x, site.y, site.z,  cfg));
 
         for (long long i = 0; i < NphotPerSite; i++)
         {
-            PhotonResult res = PropagateOnePhoton(rng, site, (int)j, L, W, T, wrap, cfg);
+            PhotonResult res = PropagateOnePhoton(rng, site, (int)j,  cfg);
             if (res.detected)
                 nDet++;
             wr.Fill(res);
@@ -742,14 +824,15 @@ void RunManySites(
 void ScanBoard(   // HYL fix this - need to write with two loops
     long long Nsites,
     long long NphotPerSite,
-    double L, double W, double T,
-    int wrap,
     const OpticsConfig &cfg,
     const char *outFile = "toyOptics.root")
 {
     TRandom3 rng(0);
-    TreeWriter wr(outFile, cfg.savePath);
-
+    TreeWriter wr(outFile, cfg);
+    double L = cfg.L;
+    double T = cfg.T;
+    double W = cfg.W;
+    int wrap = cfg.wrap;
     long long nDet = 0;
     for (long long j = 0; j < Nsites; j++)
     {
@@ -762,11 +845,11 @@ void ScanBoard(   // HYL fix this - need to write with two loops
                 rng.Uniform(0.0, L),
                 rng.Uniform(-W / 2.0, W / 2.0),
                 rng.Uniform(-T / 2.0, T / 2.0));
-        } while (!InsideActiveVolume(site.x, site.y, site.z, L, W, T, cfg));
+        } while (!InsideActiveVolume(site.x, site.y, site.z, cfg));
 
         for (long long i = 0; i < NphotPerSite; i++)
         {
-            PhotonResult res = PropagateOnePhoton(rng, site, (int)j, L, W, T, wrap, cfg);
+            PhotonResult res = PropagateOnePhoton(rng, site, (int)j,  cfg);
             if (res.detected)
                 nDet++;
             wr.Fill(res);
@@ -990,8 +1073,6 @@ void DrawEventFromTree(
     const char *fn = "toyOptics.root",
     Long64_t ievt = 0,
     bool drawWedge = true,
-    double wedgeLen = 20.0,
-    double wedgeTipW = 5.0,
     bool zoom = true,
     double zoomMargin = 0.15 // 15% padding around the path
 )
@@ -1012,10 +1093,15 @@ void DrawEventFromTree(
     int absorbed = 0, escaped = 0, endPlane = 0, nBounces = 0;
     double pathLen = 0;
 
-    t->SetBranchAddress("L", &L);
-    t->SetBranchAddress("W", &W);
-    t->SetBranchAddress("T", &T);
-    t->SetBranchAddress("wrap", &wrap);
+    double wedgeLen = 20.0;
+    double wedgeTipW = 5.0;
+
+    t->SetBranchAddress("cfg_wedgeLen", &wedgeLen);
+    t->SetBranchAddress("cfg_wedgeTipW", &wedgeTipW);
+    t->SetBranchAddress("cfg_L", &L);
+    t->SetBranchAddress("cfg_W", &W);
+    t->SetBranchAddress("cfg_T", &T);
+
 
     // These should exist if you used the TreeWriter block I gave
     if (t->GetBranch("reachedEnd"))
@@ -1191,9 +1277,8 @@ void DrawEventFromTree(
 void DrawEventFromTreeOld(
     const char *fn = "toyOptics.root",
     Long64_t ievt = 0,
-    bool drawWedge = true,
-    double wedgeLen = 20.0,
-    double wedgeTipW = 5.0)
+    bool drawWedge = true
+    )
 {
     TFile f(fn);
     auto t = (TTree *)f.Get("tPhot");
@@ -1205,15 +1290,19 @@ void DrawEventFromTreeOld(
 
     double L = 0, W = 0, T = 0;
     int wrap = 0;
-
     std::vector<float> *xP = nullptr;
     std::vector<float> *yP = nullptr;
     std::vector<float> *zP = nullptr;
+    double wedgeLen = 20.0;
+    double wedgeTipW = 5.0;
 
-    t->SetBranchAddress("L", &L);
-    t->SetBranchAddress("W", &W);
-    t->SetBranchAddress("T", &T);
-    t->SetBranchAddress("wrap", &wrap);
+    t->SetBranchAddress("cfg_wedgeLen", &wedgeLen);
+    t->SetBranchAddress("cfg_wedgeTipW", &wedgeTipW);
+
+    t->SetBranchAddress("cfg_L", &L);
+    t->SetBranchAddress("cfg_W", &W);
+    t->SetBranchAddress("cfg_T", &T);
+    t->SetBranchAddress("cfg_wrap", &wrap);
 
     // These branches exist only if you ran with cfg.savePath=true
     bool hasPath = (t->GetBranch("xPath") && t->GetBranch("yPath") && t->GetBranch("zPath"));
@@ -1277,8 +1366,6 @@ void DrawEventSplitViewFromTree(
     const char *fn = "toyOptics.root",
     Long64_t ievt = 0,
     bool drawWedge = true,
-    double wedgeLen = 20.0,
-    double wedgeTipW = 5.0,
     double zoomMargin = 0.12 // padding for the zoomed-in view
 )
 {
@@ -1296,10 +1383,17 @@ void DrawEventSplitViewFromTree(
     int absorbed = 0, escaped = 0, endPlane = 0, nBounces = 0;
     double pathLen = 0;
 
-    t->SetBranchAddress("L", &L);
-    t->SetBranchAddress("W", &W);
-    t->SetBranchAddress("T", &T);
-    t->SetBranchAddress("wrap", &wrap);
+    double wedgeLen = 20.0;
+    double wedgeTipW = 5.0;
+
+    t->SetBranchAddress("cfg_wedgeLen", &wedgeLen);
+    t->SetBranchAddress("cfg_wedgeTipW", &wedgeTipW);
+
+
+    t->SetBranchAddress("cfg_L", &L);
+    t->SetBranchAddress("cfg_W", &W);
+    t->SetBranchAddress("cfg_T", &T);
+    t->SetBranchAddress("cfg_wrap", &wrap);
 
     if (t->GetBranch("reachedEnd"))
         t->SetBranchAddress("reachedEnd", &reachedEnd);
@@ -1457,8 +1551,6 @@ void DrawEvent4ViewFromTree(
     const char *fn = "toyOptics.root",
     Long64_t ievt = 0,
     bool drawWedge = true,
-    double wedgeLen = 20.0,
-    double wedgeTipW = 5.0,
     double zoomMargin = 0.12)
 {
     TFile f(fn);
@@ -1474,11 +1566,16 @@ void DrawEvent4ViewFromTree(
     int reachedEnd = 0, pmt_side = 0, inPMT = 0, detected = 0;
     int absorbed = 0, escaped = 0, endPlane = 0, nBounces = 0;
     double pathLen = 0;
+    double wedgeLen = 20.0;
+    double wedgeTipW = 5.0;
 
-    t->SetBranchAddress("L", &L);
-    t->SetBranchAddress("W", &W);
-    t->SetBranchAddress("T", &T);
-    t->SetBranchAddress("wrap", &wrap);
+    t->SetBranchAddress("cfg_wedgeLen", &wedgeLen);
+    t->SetBranchAddress("cfg_wedgeTipW", &wedgeTipW);
+
+    t->SetBranchAddress("cfg_L", &L);
+    t->SetBranchAddress("cfg_W", &W);
+    t->SetBranchAddress("cfg_T", &T);
+    t->SetBranchAddress("cfg_wrap", &wrap);
 
     if (t->GetBranch("reachedEnd"))
         t->SetBranchAddress("reachedEnd", &reachedEnd);

@@ -25,14 +25,12 @@ cfg2.rPMT = 2.54; // cm
 cfg2.eps0 = 0; // kills all non-direct PMT hits
 RunManySites(
   1,
-  100,
-  90, 30, 1,
-  1,
+  1000,
   cfg2,
   "wedge.root"
 );
 // No zoom
-DrawEventFromTree("wedge.root", 0, true, 20.0, 5.0, false);
+DrawEventFromTree("wedge.root", 0, true, false);
 DrawEventSplitViewFromTree("wedge.root", 1, true, 20.0, 5.0, 0.10);
 DrawEvent4ViewFromTree("wedge.root",   1, true,  20.0, 5.0, 0.12);
 // Zoom in tighter:
