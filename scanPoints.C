@@ -49,18 +49,14 @@
 #include "TreeWriter.h"
 #include "Transport.h"
 #include "DrawHelper.h"
-void RunOnePoint100AndDraw()
+void scanPoints()
 
 {
     gROOT->ProcessLine(".L TreeWriter.cxx+");
     gROOT->ProcessLine(".L Geometry.cxx+");
     gROOT->ProcessLine(".L Transport.cxx+");
-  //  gROOT->ProcessLine(".L RunToy.cxx+");
+    //  gROOT->ProcessLine(".L RunToy.cxx+");
     gROOT->ProcessLine(".L DrawHelper.cxx+");
-
-
-
-
 
     OpticsConfig cfg;
     cfg.savePath = true;
@@ -90,61 +86,67 @@ void RunOnePoint100AndDraw()
     cfg.wedgeLen = 20.0;
     cfg.wedgeTipW = 5.0;
 
-    const char *outFile = "onePoint_100.root";
-
-    // fixed emission point (pick anything inside the active volume)
-
-    double x0,x1,y0,y1,z0,z1;
-    if (cfg.useWedge) {
+    double x0, x1, y0, y1, z0, z1;
+    if (cfg.useWedge)
+    {
         x0 = cfg.wedgeLen;
         x1 = cfg.L - cfg.wedgeLen;
     }
-    else if (!cfg.useWedge) {
+    else if (!cfg.useWedge)
+    {
         x0 = 0;
         x1 = cfg.L;
-
     }
-    y0 = -cfg.W * 0.5  ;
-    y1 = cfg.W  * 0.5 ;
-    z0 = -cfg.T * 0.5; ;
-    z1 = cfg.T  * 0.5; ;
-    double epsilon = 1e-5; //1e-6;
+    y0 = -cfg.W * 0.5;
+    y1 = cfg.W * 0.5;
+    z0 = -cfg.T * 0.5;
+    ;
+    z1 = cfg.T * 0.5;
+    ;
+    double epsilon = 1e-5; // 1e-6;
     // Vec3 site((cfg.L) * 0.5, 0, 0); // center
     //  Vec3 site(x0 + epsilon ,y0 + epsilon,z0 + epsilon); // corner 1
-      Vec3 site(x1 - epsilon ,y1 - epsilon,z1 - epsilon); // corner 2
+   // Vec3 site(x1 - epsilon, y1 - epsilon, z1 - epsilon); // corner 2
     // printf ("%f %f %f\n",site.x,site.y,site.z);
 
-    TRandom3 rng(0);
-    TreeWriter wr(outFile, cfg);
-    const int N = 100;
-    for (int i = 0; i < N; i++)
+    int NstepsX = 3;
+    int NstepsY = 3;
+
+    for (int ix = 0; ix < NstepsX; ix++)
     {
-        PhotonResult res = PropagateOnePhoton(
-            rng,
-            site,
-            0,               // site_number
-            cfg);
+        double x = x0 + (x1 - x0) * ix / (NstepsX - 1);
+        for (int iy = 0; iy < NstepsY; iy++)
+        {
+            double y = y0 + (y1 - y0) * iy / (NstepsY - 1);
+            TString outFile = Form("out_%03d_%03d.root", ix, iy); //    const char *outFile = "onePoint_100.root";
+            TRandom3 rng(0);
+            TreeWriter wr(outFile, cfg);
+            Vec3 site(x, y, 0); // corner 2
+            printf ("%d %d %f %f \n",ix,iy,x,y);
+            const int N = 100;
+            for (int i = 0; i < N; i++)
+            {
+                PhotonResult res = PropagateOnePhoton(
+                    rng,
+                    site,
+                    0, // site_number
+                    cfg);
 
-        wr.Fill(res);
+                wr.Fill(res);
+            }
+
+            wr.Close();
+            DrawEventSplitViewFromTree(outFile, 12, true, 0.12);
+         //   DrawEvent4ViewFromTree("onePoint_100.root", 12, true, 0.12);
+        }
     }
+            // Draw the 1st event
+            /*  DrawEventFromTree("wedge.root", 0, true, false);
+          DrawEventSplitViewFromTree("wedge.root", 1, true, 20.0, 5.0, 0.10);
+          DrawEvent4ViewFromTree("wedge.root",   1, true,  20.0, 5.0, 0.12);
+          // Zoom in tighter:
+          DrawEventFromTree("wedge.root", 0, true, 20.0, 5.0, true, 0.05);
+          */
 
-    wr.Close();
-   DrawEventSplitViewFromTree("onePoint_100.root", 12, true, 0.12);
-   DrawEvent4ViewFromTree("onePoint_100.root",   12, true,     0.12);
-   // Draw the 1st event
-  /*  DrawEventFromTree("wedge.root", 0, true, false);
-DrawEventSplitViewFromTree("wedge.root", 1, true, 20.0, 5.0, 0.10);
-DrawEvent4ViewFromTree("wedge.root",   1, true,  20.0, 5.0, 0.12);
-// Zoom in tighter:
-DrawEventFromTree("wedge.root", 0, true, 20.0, 5.0, true, 0.05);
-*/
-
-    //DrawEventFromTree(outFile, 0, true,  true);
-}
-
-
-
-
-
-
-
+            // DrawEventFromTree(outFile, 0, true,  true);
+        }

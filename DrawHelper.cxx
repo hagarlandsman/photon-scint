@@ -313,7 +313,7 @@ void DrawEventFromTree(
      );
    */
 
-    auto c = new TCanvas("cEvt", "event", 1100, 800);
+     TCanvas*   c = new TCanvas("cEvt", "event", 1100, 800);
 
     // Default view ranges
     double xmin = 0, xmax = L;
@@ -470,7 +470,7 @@ void DrawEventFromTreeOld(
 
     t->GetEntry(ievt);
 
-    auto c = new TCanvas("cEvt", "event", 900, 700);
+     TCanvas*  c = new TCanvas("cEvt", "event", 900, 700);
 
     // Force a 1:1:1 feel by drawing a cubic frame (equal axis numeric spans)
     double maxDim = std::max(L, std::max(W, T));
@@ -645,7 +645,7 @@ void DrawEventSplitViewFromTree(
     if (auto old = gROOT->FindObject(cname))
         delete old;
 
-    auto c = new TCanvas(cname, "event split view", 1400, 1000);
+    TCanvas* c = new TCanvas(cname, "event split view", 1400, 1000);
     c->Divide(1, 2);
 
     auto drawOnePad = [&](int ipad,
@@ -814,7 +814,7 @@ void DrawEvent4ViewFromTree(
     if (auto old = gROOT->FindObject(cname))
         delete old;
 
-    auto c = new TCanvas(cname, "XY and XZ, zoomed and unzoomed", 1400, 1000);
+     TCanvas*  c = new TCanvas(cname, "XY and XZ, zoomed and unzoomed", 1400, 1000);
     c->Divide(2, 2, 0.01, 0.01);
 
     auto drawXY = [&](int pad, bool zoomed)

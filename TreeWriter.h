@@ -11,7 +11,7 @@ class TreeWriter
 public:
     TreeWriter(const char *outFile, const OpticsConfig &cfg);
 
-    ~TreeWriter();
+ //   ~TreeWriter();
 
     void Fill(const PhotonResult &in);
     void Close();

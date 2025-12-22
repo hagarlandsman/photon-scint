@@ -279,7 +279,7 @@ PhotonResult PropagateOnePhoton(
             double pEnd = cfg.epsCouple * cfg.pde * r.epsRaysPMT;
             if (rng.Uniform() < pEnd)
                 r.detected = 1;
-            printf("Detected\n");
+          //  printf("Detected\n");
             return r;
         }
 
