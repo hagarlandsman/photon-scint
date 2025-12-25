@@ -10,3 +10,6 @@ void DrawEvent4ViewFromTree   (
     bool drawWedge ,
     double zoomMargin // padding for the zoomed-in view
 );
+
+void DrawFracColz(const char* , const char* );
+void PrintCountsFromTree(const char* fname = "onePoint_100.root", const char* treename = "tPhot");

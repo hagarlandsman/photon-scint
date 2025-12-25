@@ -20,7 +20,7 @@
 #include <algorithm>
 #include <iostream>
 
-// -----------------------------
+#include "OpticsConfig.h"
 static TPolyLine3D *Edge(double x1, double y1, double z1, double x2, double y2, double z2)
 {
     auto e = new TPolyLine3D(2);
@@ -157,6 +157,9 @@ static void DrawInfoBox2D(
     p->SetBorderSize(1);
     p->SetTextAlign(12);
     p->SetTextSize(0.03);
+    printf("event %lld | geometry: L=%.1f cm, W=%.1f cm, T=%.1f cm | wrap: %s \n",(long long)ievt, L, W, T, wrapName);
+    printf("status: reachedEnd=%d (pmtSide=%d, inPMT=%d, detected=%d) | absorbed=%d | escaped=%d \n",reachedEnd, pmt_side, inPMT, detected, absorbed, escaped);
+    printf("endPlane=%d | bounces=%d | path=%.2f cm \n", endPlane, nBounces, pathLen);
 
     p->AddText(Form("event %lld | geometry: L=%.1f cm, W=%.1f cm, T=%.1f cm | wrap: %s",
                     (long long)ievt, L, W, T, wrapName));
@@ -810,7 +813,9 @@ void DrawEvent4ViewFromTree(
     double zo1 = -T / 2.0, zo2 = +T / 2.0;
 
     // Unique canvas name
-    TString cname = Form("c4_%lld", (long long)ievt);
+    //TString cname = Form("c4_%lld", (long long)ievt);
+    TString cname = "c4_scint";
+
     if (auto old = gROOT->FindObject(cname))
         delete old;
 
@@ -934,6 +939,199 @@ void DrawEvent4ViewFromTree(
     drawXZ(3, false);
     drawXZ(4, true);
 
+    ////
+ // Compute zoomed-in bounds from path
+     xlo = (*xP)[0], xhi = (*xP)[0];
+     ylo = (*yP)[0], yhi = (*yP)[0];
+     zlo = (*zP)[0], zhi = (*zP)[0];
+
+    for (size_t i = 1; i < xP->size(); i++)
+    {
+        xlo = std::min(xlo, (double)(*xP)[i]);
+        xhi = std::max(xhi, (double)(*xP)[i]);
+        ylo = std::min(ylo, (double)(*yP)[i]);
+        yhi = std::max(yhi, (double)(*yP)[i]);
+        zlo = std::min(zlo, (double)(*zP)[i]);
+        zhi = std::max(zhi, (double)(*zP)[i]);
+    }
+
+     dx = xhi - xlo;
+    if (dx <= 0)
+        dx = 1;
+     dy = yhi - ylo;
+    if (dy <= 0)
+        dy = 1;
+     dz = zhi - zlo;
+    if (dz <= 0)
+        dz = 1;
+
+    xlo -= zoomMargin * dx;
+    xhi += zoomMargin * dx;
+    ylo -= zoomMargin * dy;
+    yhi += zoomMargin * dy;
+    zlo -= zoomMargin * dz;
+    zhi += zoomMargin * dz;
+
+    // Clamp zoom-in to detector bounds
+    xlo = std::max(xlo, 0.0);
+    xhi = std::min(xhi, L);
+    ylo = std::max(ylo, -W / 2);
+    yhi = std::min(yhi, W / 2);
+    zlo = std::max(zlo, -T / 2);
+    zhi = std::min(zhi, T / 2);
+
+    // Zoomed-out cube bounds (for 1:1:1 feel)
+    double maxDim = std::max(L, std::max(W, T));
+    double xPad = 0.5 * (maxDim - L);
+
+    double xo_min = -xPad, xo_max = L + xPad;
+    double yo_min = -0.5 * maxDim, yo_max = 0.5 * maxDim;
+    double zo_min = -0.5 * maxDim, zo_max = 0.5 * maxDim;
+
+    // Unique canvas name
+
+
+
+
+    auto drawOnePad = [&](int ipad,
+                          double xmin, double xmax, double ymin, double ymax, double zmin, double zmax,
+                          const char *padTitle)
+    {
+        c->cd(ipad);
+
+        TString frname = Form("fr_%lld_%d", (long long)ievt, ipad);
+        auto frame = new TH3D(frname, Form("%s; x (cm); y (cm); z (cm)", padTitle),
+                              10, xmin, xmax,
+                              10, ymin, ymax,
+                              10, zmin, zmax);
+        frame->SetDirectory(nullptr);
+        frame->SetStats(0);
+        frame->Draw();
+
+        DrawBoxWireframe(L, W, T);
+        if (drawWedge)
+            DrawWedgeOutlineXY(L, W, wedgeTipW, wedgeLen);
+
+        auto pl = new TPolyLine3D((int)xP->size());
+        //    pl->SetName(Form("pl_%lld_%d", (long long)ievt, ipad));
+        for (int i = 0; i < (int)xP->size(); i++)
+            pl->SetPoint(i, (*xP)[i], (*yP)[i], (*zP)[i]);
+        pl->SetLineWidth(3);
+        pl->Draw("same");
+        const int n = (int)xP->size();
+        auto pm = DrawStartEndMarkers3D((*xP)[0], (*yP)[0], (*zP)[0],
+                                        (*xP)[n - 1], (*yP)[n - 1], (*zP)[n - 1]);
+
+        // Put info box only once (left pad) or on both if you want
+        if (ipad == 1)
+        {
+            DrawEventInfoBox(ievt, L, W, T, wrap,
+                             reachedEnd, pmt_side, inPMT, detected,
+                             absorbed, escaped,
+                             endPlane, nBounces, pathLen);
+            auto leg = new TLegend(0.62, 0.22, 0.99, 0.36); // x1,y1,x2,y2 in NDC
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+            leg->SetTextSize(0.05);
+
+            leg->AddEntry(pl, "Photon path", "l");
+            leg->AddEntry(pm.start, "Start point", "p");
+            leg->AddEntry(pm.end, "End point", "p");
+            leg->Draw();
+        }
+    };
+
+    drawOnePad(1, xo_min, xo_max, yo_min, yo_max, zo_min, zo_max, "Zoom out");
+    drawOnePad(3, xlo, xhi, ylo, yhi, zlo, zhi, "Zoom in");
+
     c->Modified();
     c->Update();
+
+    /////
+    c->Modified();
+    c->Update();
+}
+
+void DrawFracColz(const char* fn="scan_summary.root", const char* tname = "tScan")
+{
+  TFile f(fn);
+  auto t = (TTree*)f.Get(tname);
+  if(!t){ std::cout<<"no tScan\n"; return; }
+    else {printf ("N=%lld \n",t->GetEntries());}
+  // choose binning (match your grid)
+  int nx = 3, ny = 3;
+
+  // detected fraction
+  t->Draw(Form("y:x>>hDet(%d,0,90,%d,-15,15)", nx, ny), "frac_detected", "colz");
+
+  // if you want, set titles after the draw:
+  auto hDet = (TH2*)gROOT->FindObject("hDet");
+  if(hDet){
+    hDet->SetTitle("Detected fraction; x (cm); y (cm)");
+    gPad->Modified(); gPad->Update();
+  }
+}
+
+void PrintCountsFromTree(const char* fn="toyOptics.root", const char* tn="tPhot")
+{
+    TFile f(fn, "READ");
+    if (f.IsZombie()) {
+        std::cout << "Cannot open file: " << fn << "\n";
+        return;
+    }
+
+    auto t = (TTree*)f.Get(tn);
+    if (!t) {
+        std::cout << "Cannot find tree: " << tn << "\n";
+        return;
+    }
+
+    auto has = [&](const char* b){ return t->GetBranch(b) != nullptr; };
+
+    // You might have one of these depending on how you wrote the tree
+    // absorbed: "absorbed"
+    // escaped:  "escaped"
+    // hitPMT:   "inPMT" or "hitPMT"
+    // detected: "detected"
+    const char* bAbs = has("absorbed") ? "absorbed" : nullptr;
+    const char* bEsc = has("escaped")  ? "escaped"  : nullptr;
+    const char* bHit = has("inPMT")    ? "inPMT"    : (has("hitPMT") ? "hitPMT" : nullptr);
+    const char* bDet = has("detected") ? "detected" : nullptr;
+
+    if (!bAbs) std::cout << "Missing branch: absorbed\n";
+    if (!bEsc) std::cout << "Missing branch: escaped\n";
+    if (!bHit) std::cout << "Missing branch: inPMT or hitPMT\n";
+    if (!bDet) std::cout << "Missing branch: detected\n";
+
+    auto countOnes = [&](const char* bname)->Long64_t {
+        if (!bname) return 0;
+        // assumes 0/1 per entry
+        TString sel = Form("%s!=0", bname);
+        return t->GetEntries(sel);
+    };
+
+    Long64_t nTot = t->GetEntries();
+
+    Long64_t nAbs = countOnes(bAbs);
+    Long64_t nEsc = countOnes(bEsc);
+    Long64_t nHit = countOnes(bHit);
+    Long64_t nDet = countOnes(bDet);
+
+    std::cout << "File: " << fn << " | Tree: " << tn << "\n";
+    std::cout << "Total entries: " << nTot << "\n";
+    std::cout << "absorbed: "  << nAbs << "\n";
+    std::cout << "escaped: "   << nEsc << "\n";
+    std::cout << "hitPMT: "    << nHit << "  (branch=" << (bHit ? bHit : "none") << ")\n";
+    std::cout << "detected: "  << nDet << "\n";
+
+    OpticsConfig* cfg = nullptr;
+
+    TTree *tCfg = (TTree*)f.Get("tCfg");
+    tCfg->SetBranchAddress("cfg",&cfg);
+   // tCfg->GetEntry(0);
+   // tCfg->Print();
+   printf ("W=%f \n",cfg->W);
+    tCfg->Scan("L:W:T:nScint:nOut");
+    //tCfg->Show(0);
+
 }

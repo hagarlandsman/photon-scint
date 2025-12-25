@@ -262,6 +262,18 @@ PhotonResult PropagateOnePhoton(
         }
 
         // End planes: detection
+       // Change: end planes (plane 0/1) are no longer an automatic "terminate" unless detected.
+// If photon reaches an end plane but is NOT detected (or not inPMT), we treat that end plane
+// like a reflective boundary: apply TIR, then reflect with probability cfg.Rwrap (else escape).
+//
+// Notes:
+// - I keep the "outside wedge aperture -> escape" behavior as-is (your geometry aperture).
+// - Reflection model on the end plane follows your wrap choice:
+//     PTFE -> diffuse (Lambertian), Mylar -> specular
+// - If you want the end plane to have a different reflectivity than cfg.Rwrap,
+//   add a cfg.Rend and use it below.
+
+        // End planes: detection OR reflection
         if (plane == 0 || plane == 1)
         {
             if (!InsideWedgeAperture(pos.x, pos.y, pos.z, cfg))
@@ -275,13 +287,60 @@ PhotonResult PropagateOnePhoton(
             r.pmt_side = (plane == 0) ? 1 : 2;
             r.inPMT = InsidePMTCircle(pos.y, pos.z, cfg.rPMT) ? 1 : 0;
 
+            // Detection probability (only meaningful if it lands in the PMT region, but you currently
+            // compute epsRaysPMT for all y,z - that's fine)
             r.epsRaysPMT = epsCoupleExp(pos.y, pos.z, cfg.rPMT, cfg.eps0, cfg.lambdaC);
             double pEnd = cfg.epsCouple * cfg.pde * r.epsRaysPMT;
+
+            // If detected -> terminate as before
             if (rng.Uniform() < pEnd)
+            {
                 r.detected = 1;
-          //  printf("Detected\n");
+                return r;
+            }
+            else
+            {
+            r.inPMT = 1;
             return r;
+            }
+
+            // Not detected (or not inPMT) -> reflect instead of terminating.
+            // Define end-plane normal:
+            // plane 0 is x=0 outward normal points to -x
+            // plane 1 is x=L outward normal points to +x
+            Vec3 nHatEnd = (plane == 0) ? Vec3(-1, 0, 0) : Vec3(+1, 0, 0);
+            nHatEnd = Unit(nHatEnd);
+
+            // TIR check at the end plane
+            double cosIncEnd = std::fabs(Dot(dir, nHatEnd));
+            bool isTIRend = (cosIncEnd < cosThetaC);
+
+            if (isTIRend)
+            {
+                dir = Unit(ReflectSpecular(dir, nHatEnd));
+                r.nBounces++;
+                continue;
+            }
+
+            // Non-TIR: reflect with probability Rwrap, else escape/absorb at the end
+            if (rng.Uniform() >= cfg.Rwrap)
+            {
+                r.escaped = 1;
+                r.endPlane = plane;
+                return r;
+            }
+
+            // Reflection model on end plane: PTFE diffuse, Mylar specular
+            if (PTFE && !mylar)
+                dir = SampleLambert(-nHatEnd, rng);
+            else
+                dir = Unit(ReflectSpecular(dir, nHatEnd));
+
+            r.nBounces++;
+            continue;
         }
+
+
 
         // Surface normal
         Vec3 nHat;

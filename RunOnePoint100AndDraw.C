@@ -57,13 +57,10 @@ void RunOnePoint100AndDraw()
     gROOT->ProcessLine(".L Transport.cxx+");
   //  gROOT->ProcessLine(".L RunToy.cxx+");
     gROOT->ProcessLine(".L DrawHelper.cxx+");
-
-
-
-
+//   DrawEvent4ViewFromTree("onePoint_100.root",   12, true,     0.12);
 
     OpticsConfig cfg;
-    cfg.savePath = true;
+    cfg.savePath = false;
 
     // geometry (also passed explicitly below, matching your current PropagateOnePhoton signature)
     cfg.L = 90.0;
@@ -86,37 +83,42 @@ void RunOnePoint100AndDraw()
     cfg.lambdaC = 120.0;
 
     // wedges
-    cfg.useWedge = true;
-    cfg.wedgeLen = 20.0;
-    cfg.wedgeTipW = 5.0;
+    cfg.useWedge = false;
+    cfg.wedgeLen = 0; // 20.0;
+    cfg.wedgeTipW = 0; // 5.0;
 
     const char *outFile = "onePoint_100.root";
 
     // fixed emission point (pick anything inside the active volume)
 
-    double x0,x1,y0,y1,z0,z1;
-    if (cfg.useWedge) {
+    double x0,x1,yy0,yy1,z0,z1;
+    x0 = 0;
+    x1 = cfg.L;
+    if (cfg.useWedge && cfg.wedgeLen>0 ) {
         x0 = cfg.wedgeLen;
         x1 = cfg.L - cfg.wedgeLen;
     }
-    else if (!cfg.useWedge) {
-        x0 = 0;
-        x1 = cfg.L;
 
-    }
-    y0 = -cfg.W * 0.5  ;
-    y1 = cfg.W  * 0.5 ;
+    yy0 = -cfg.W * 0.5  ;
+    yy1 = cfg.W  * 0.5 ;
     z0 = -cfg.T * 0.5; ;
     z1 = cfg.T  * 0.5; ;
     double epsilon = 1e-5; //1e-6;
-    // Vec3 site((cfg.L) * 0.5, 0, 0); // center
+    printf ("%f %f %f \n",x1 - epsilon ,yy1 - epsilon,z1 - epsilon);
+    Vec3 site((cfg.L) * 0.5, 0, 0); // center
     //  Vec3 site(x0 + epsilon ,y0 + epsilon,z0 + epsilon); // corner 1
-      Vec3 site(x1 - epsilon ,y1 - epsilon,z1 - epsilon); // corner 2
+ //     Vec3 site(x1 - epsilon ,y1 - epsilon,z1 - epsilon); // corner 2
     // printf ("%f %f %f\n",site.x,site.y,site.z);
 
     TRandom3 rng(0);
     TreeWriter wr(outFile, cfg);
-    const int N = 100;
+
+    TTree *tCfg = new TTree("tCfg","Run configuration");
+    tCfg->Branch("cfg", &cfg);
+    tCfg->Fill();
+    tCfg->Write();
+
+    const int N = 10000;
     for (int i = 0; i < N; i++)
     {
         PhotonResult res = PropagateOnePhoton(
@@ -129,7 +131,7 @@ void RunOnePoint100AndDraw()
     }
 
     wr.Close();
-   DrawEventSplitViewFromTree("onePoint_100.root", 12, true, 0.12);
+  // DrawEventSplitViewFromTree("onePoint_100.root", 12, true, 0.12);
    DrawEvent4ViewFromTree("onePoint_100.root",   12, true,     0.12);
    // Draw the 1st event
   /*  DrawEventFromTree("wedge.root", 0, true, false);
