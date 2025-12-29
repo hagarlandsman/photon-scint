@@ -226,9 +226,9 @@ void scanPoints()
     y0 = -cfg.W * 0.5 + epsilon;
     y1 = +cfg.W * 0.5 - epsilon;
 
-    int dscan = 10;
-    const int NstepsX = int((cfg.L - epsilon * 2) / dscan); // scan every dscan cm
-    const int NstepsY = int((cfg.W - epsilon * 2) / dscan); // scan every dscan cm
+    int dscan = 2;
+    const int NstepsX = int((cfg.L  ) / dscan); // scan every dscan cm
+    const int NstepsY = int((cfg.W  ) / dscan); // scan every dscan cm
     const int Nphot = 100000;
     TString name = Form("out/scint_%d_%d_%d_", int(cfg.L), int(cfg.W), int(cfg.T));
     if (cfg.useWedge)
