@@ -276,6 +276,7 @@ PhotonResult PropagateOnePhoton(
         // End planes: detection OR reflection
         if (plane == 0 || plane == 1)
         {
+
             if (!InsideWedgeAperture(pos.x, pos.y, pos.z, cfg))
             {
                 r.escaped = 1;
@@ -283,67 +284,42 @@ PhotonResult PropagateOnePhoton(
                 return r;
             }
 
-            r.reachedEnd = 1;
-            r.pmt_side = (plane == 0) ? 1 : 2;
             r.inPMT = InsidePMTCircle(pos.y, pos.z, cfg.rPMT) ? 1 : 0;
 
-            // Detection probability (only meaningful if it lands in the PMT region, but you currently
-            // compute epsRaysPMT for all y,z - that's fine)
-            r.epsRaysPMT = epsCoupleExp(pos.y, pos.z, cfg.rPMT, cfg.eps0, cfg.lambdaC);
-            double pEnd = cfg.epsCouple * cfg.pde * r.epsRaysPMT;
 
             // If detected -> terminate as before
-            if (rng.Uniform() < pEnd)
+            if (r.inPMT)
             {
-                r.detected = 1;
-                return r;
+                r.reachedEnd = 1;
+                r.pmt_side = (plane == 0) ? 1 : 2;
+
+                // Detection probability (only meaningful if it lands in the PMT region, but you currently
+                // compute epsRaysPMT for all y,z - that's fine)
+                r.epsRaysPMT = epsCoupleExp(pos.y, pos.z, cfg.rPMT, cfg.eps0, cfg.lambdaC);
+                double pEnd = cfg.epsCouple * cfg.pde * r.epsRaysPMT;
+                if (rng.Uniform() < pEnd )
+                {
+                    r.detected = 1;
+                    r.inPMT = 0;
+                    return r;
+                }
+                else
+                {
+                    r.detected = 0;
+                    r.inPMT = 1;
+                    return r;
+                }
             }
-            else
-            {
-            r.inPMT = 1;
-            return r;
-            }
-
-            // Not detected (or not inPMT) -> reflect instead of terminating.
-            // Define end-plane normal:
-            // plane 0 is x=0 outward normal points to -x
-            // plane 1 is x=L outward normal points to +x
-            Vec3 nHatEnd = (plane == 0) ? Vec3(-1, 0, 0) : Vec3(+1, 0, 0);
-            nHatEnd = Unit(nHatEnd);
-
-            // TIR check at the end plane
-            double cosIncEnd = std::fabs(Dot(dir, nHatEnd));
-            bool isTIRend = (cosIncEnd < cosThetaC);
-
-            if (isTIRend)
-            {
-                dir = Unit(ReflectSpecular(dir, nHatEnd));
-                r.nBounces++;
-                continue;
-            }
-
-            // Non-TIR: reflect with probability Rwrap, else escape/absorb at the end
-            if (rng.Uniform() >= cfg.Rwrap)
-            {
-                r.escaped = 1;
-                r.endPlane = plane;
-                return r;
-            }
-
-            // Reflection model on end plane: PTFE diffuse, Mylar specular
-            if (PTFE && !mylar)
-                dir = SampleLambert(-nHatEnd, rng);
-            else
-                dir = Unit(ReflectSpecular(dir, nHatEnd));
-
-            r.nBounces++;
-            continue;
         }
 
 
 
         // Surface normal
         Vec3 nHat;
+        if (plane == 0)
+            nHat = Vec3(-1.0, 0.0, 0.0);
+        if (plane == 1)
+            nHat = Vec3(+1.0, 0.0, 0.0);
         if (plane == 2)
             nHat = Vec3(0, -1, 0);
         if (plane == 3)

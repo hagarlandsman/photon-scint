@@ -60,7 +60,7 @@ void RunOnePoint100AndDraw()
 //   DrawEvent4ViewFromTree("onePoint_100.root",   12, true,     0.12);
 
     OpticsConfig cfg;
-    cfg.savePath = false;
+    cfg.savePath = true;
 
     // geometry (also passed explicitly below, matching your current PropagateOnePhoton signature)
     cfg.L = 90.0;
