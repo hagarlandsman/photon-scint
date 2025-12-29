@@ -8,6 +8,7 @@
 #include "TH2D.h"
 #include "TCanvas.h"
 #include "TH1D.h"
+#include "TStopwatch.h"
 
 #include "Geometry.h"
 #include "Vec3.h"
@@ -19,35 +20,40 @@
 // TODO: add info if was hit left or right. Run again without saving path information 22/12/2025
 // ------------------------------
 // Helper: count outcomes inside a per-point ROOT file
-struct Counts {
+struct Counts
+{
     Long64_t total = 0;
     Long64_t absorbed = 0;
     Long64_t escaped = 0;
-    Long64_t hitPMT = 0;     // uses inPMT (or hitPMT if you have that)
+    Long64_t hitPMT = 0; // uses inPMT (or hitPMT if you have that)
     Long64_t detected = 0;
 };
 
 // ------------------------------
 // Helper: mean and RMS of "path" for detected photons per PMT side
-struct PathStats {
+struct PathStats
+{
     Long64_t n = 0;
     double mean = 0.0;
-    double rms  = 0.0; // width (standard deviation)
+    double rms = 0.0; // width (standard deviation)
 };
 
-static Long64_t CountDetectedSideFromFile(const char* fn, int pmtSide, const char* tn="tPhot")
+static Long64_t CountDetectedSideFromFile(const char *fn, int pmtSide, const char *tn = "tPhot")
 {
     TFile f(fn, "READ");
-    if (f.IsZombie()) {
+    if (f.IsZombie())
+    {
         std::cout << "CountDetectedSideFromFile: cannot open " << fn << "\n";
         return 0;
     }
-    auto t = (TTree*)f.Get(tn);
-    if (!t) {
+    auto t = (TTree *)f.Get(tn);
+    if (!t)
+    {
         std::cout << "CountDetectedSideFromFile: cannot find tree " << tn << " in " << fn << "\n";
         return 0;
     }
-    if (!t->GetBranch("detected") || !t->GetBranch("pmt_side")) {
+    if (!t->GetBranch("detected") || !t->GetBranch("pmt_side"))
+    {
         std::cout << "CountDetectedSideFromFile: missing branches in " << fn
                   << " (need detected, pmt_side)\n";
         return 0;
@@ -57,25 +63,27 @@ static Long64_t CountDetectedSideFromFile(const char* fn, int pmtSide, const cha
     return t->GetEntries(sel);
 }
 
-
-static PathStats PathStatsFromFile(const char* fn, int pmtSide, const char* tn="tPhot")
+static PathStats PathStatsFromFile(const char *fn, int pmtSide, const char *tn = "tPhot")
 {
     PathStats s;
 
     TFile f(fn, "READ");
-    if (f.IsZombie()) {
+    if (f.IsZombie())
+    {
         std::cout << "PathStatsFromFile: cannot open " << fn << "\n";
         return s;
     }
 
-    auto t = (TTree*)f.Get(tn);
-    if (!t) {
+    auto t = (TTree *)f.Get(tn);
+    if (!t)
+    {
         std::cout << "PathStatsFromFile: cannot find tree " << tn << " in " << fn << "\n";
         return s;
     }
 
     // Require needed branches
-    if (!t->GetBranch("path") || !t->GetBranch("detected") || !t->GetBranch("pmt_side")) {
+    if (!t->GetBranch("path") || !t->GetBranch("detected") || !t->GetBranch("pmt_side"))
+    {
         std::cout << "PathStatsFromFile: missing branches in " << fn
                   << " (need path, detected, pmt_side)\n";
         return s;
@@ -98,60 +106,68 @@ static PathStats PathStatsFromFile(const char* fn, int pmtSide, const char* tn="
     long double sum2 = 0.0L;
 
     const Long64_t nent = t->GetEntries();
-    for (Long64_t i = 0; i < nent; i++) {
+    for (Long64_t i = 0; i < nent; i++)
+    {
         t->GetEntry(i);
-        if (detected != 1) continue;
-        if (side != pmtSide) continue;
+        if (detected != 1)
+            continue;
+        if (side != pmtSide)
+            continue;
 
         s.n++;
-        sum  += (long double)path;
+        sum += (long double)path;
         sum2 += (long double)path * (long double)path;
     }
 
-    if (s.n > 0) {
+    if (s.n > 0)
+    {
         const long double mean = sum / (long double)s.n;
-        const long double var  = sum2 / (long double)s.n - mean * mean;
+        const long double var = sum2 / (long double)s.n - mean * mean;
         s.mean = (double)mean;
-        s.rms  = (var > 0.0L) ? std::sqrt((double)var) : 0.0;
+        s.rms = (var > 0.0L) ? std::sqrt((double)var) : 0.0;
     }
 
     return s;
 }
 
-
-static Counts CountFromFile(const char* fn, const char* tn="tPhot")
+static Counts CountFromFile(const char *fn, const char *tn = "tPhot")
 {
     Counts c;
 
     TFile f(fn, "READ");
-    if (f.IsZombie()) {
+    if (f.IsZombie())
+    {
         std::cout << "CountFromFile: cannot open " << fn << "\n";
         return c;
     }
 
-    auto t = (TTree*)f.Get(tn);
-    if (!t) {
+    auto t = (TTree *)f.Get(tn);
+    if (!t)
+    {
         std::cout << "CountFromFile: cannot find tree " << tn << " in " << fn << "\n";
         return c;
     }
 
-    auto has = [&](const char* b){ return t->GetBranch(b) != nullptr; };
+    auto has = [&](const char *b)
+    { return t->GetBranch(b) != nullptr; };
 
-    const char* bAbs = has("absorbed") ? "absorbed" : nullptr;
-    const char* bEsc = has("escaped")  ? "escaped"  : nullptr;
-    const char* bHit = has("inPMT")    ? "inPMT"    : (has("hitPMT") ? "hitPMT" : nullptr);
-    const char* bDet = has("detected") ? "detected" : nullptr;
+    const char *bAbs = has("absorbed") ? "absorbed" : nullptr;
+    const char *bEsc = has("escaped") ? "escaped" : nullptr;
+    const char *bHit = has("inPMT") ? "inPMT" : (has("hitPMT") ? "hitPMT" : nullptr);
+    const char *bDet = has("detected") ? "detected" : nullptr;
 
-    auto countOnes = [&](const char* bname)->Long64_t {
-        if (!bname) return 0;
+    auto countOnes = [&](const char *bname) -> Long64_t
+    {
+        if (!bname)
+            return 0;
         TString sel = Form("%s!=0", bname);
         return t->GetEntries(sel);
     };
 
-    c.total    = t->GetEntries();
+    c.total = t->GetEntries();
     c.absorbed = countOnes(bAbs);
-    c.escaped  = countOnes(bEsc);
-    c.hitPMT   = countOnes(bHit);
+    c.escaped = countOnes(bEsc);
+    c.hitPMT = countOnes(bHit);
     c.detected = countOnes(bDet);
     return c;
 }
@@ -191,48 +207,59 @@ void scanPoints()
 
     // wedges
     cfg.useWedge = false;
-    cfg.wedgeLen = 0; //20.0;
-    cfg.wedgeTipW = 0; //5.0;
+    cfg.wedgeLen = 0;  // 20.0;
+    cfg.wedgeTipW = 0; // 5.0;
 
     double x0, x1, y0, y1;
     double epsilon = 0.01;
 
-    if (cfg.useWedge) {
+    if (cfg.useWedge)
+    {
         x0 = cfg.wedgeLen + epsilon;
         x1 = cfg.L - cfg.wedgeLen - epsilon;
-    } else {
+    }
+    else
+    {
         x0 = 0.0 + epsilon;
         x1 = cfg.L - epsilon;
     }
     y0 = -cfg.W * 0.5 + epsilon;
     y1 = +cfg.W * 0.5 - epsilon;
 
-    int dscan=1;
-    const int NstepsX = int ((cfg.L-epsilon*2) / dscan); // scan every dscan cm
-    const int NstepsY = int ((cfg.W-epsilon*2) / dscan); // scan every dscan cm
-    const int Nphot   = 100000;
-    TString name=Form("out/scint_%d_%d_%d_",int(cfg.L),int(cfg.W),int(cfg.T));
-    if (cfg.useWedge) {
-        name += Form("wedge_%d_%d_",int(cfg.wedgeLen),int(cfg.wedgeTipW));
-    } else {
+    int dscan = 1;
+    const int NstepsX = int((cfg.L - epsilon * 2) / dscan); // scan every dscan cm
+    const int NstepsY = int((cfg.W - epsilon * 2) / dscan); // scan every dscan cm
+    const int Nphot = 100000;
+    TString name = Form("out/scint_%d_%d_%d_", int(cfg.L), int(cfg.W), int(cfg.T));
+    if (cfg.useWedge)
+    {
+        name += Form("wedge_%d_%d_", int(cfg.wedgeLen), int(cfg.wedgeTipW));
+    }
+    else
+    {
         name += "nowedge_";
     }
-    if (cfg.wrap==1) {
+    if (cfg.wrap == 1)
+    {
         name += "PTFE_";
-    } else if (cfg.wrap==2) {
+    }
+    else if (cfg.wrap == 2)
+    {
         name += "Mylar_";
-    } else {
+    }
+    else
+    {
         name += "nowrap_";
     }
-    name += Form("N_%d",Nphot);
+    name += Form("N_%d", Nphot);
     // One summary file with one tree that collects results for all (x,y)
-    TFile fsum(name+"_summary.root", "RECREATE");
+    TFile fsum(name + "_summary.root", "RECREATE");
     TTree tsum("tScan", "Per-point scan summary");
 
     double x = 0, y = 0, z = 0;
     int ix = 0, iy = 0;
-    Long64_t total=0, absorbed=0, escaped=0, hitPMT=0, detected=0;
-    double frac_absorbed=0, frac_escaped=0, frac_hitPMT=0, frac_detected=0;
+    Long64_t total = 0, absorbed = 0, escaped = 0, hitPMT = 0, detected = 0;
+    double frac_absorbed = 0, frac_escaped = 0, frac_hitPMT = 0, frac_detected = 0;
     char outFileName[512];
 
     tsum.Branch("ix", &ix, "ix/I");
@@ -252,175 +279,210 @@ void scanPoints()
     tsum.Branch("frac_escaped", &frac_escaped, "frac_escaped/D");
     tsum.Branch("frac_hitPMT", &frac_hitPMT, "frac_hitPMT/D");
     tsum.Branch("frac_detected", &frac_detected, "frac_detected/D");
-    TH2D* h_absorbed = new TH2D("h_absorbed","frac absorbed; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
-    TH2D* h_escaped = (TH2D*) h_absorbed->Clone("h_escaped"); h_escaped->SetTitle("frac escaped");
-    TH2D* h_detected = (TH2D*) h_absorbed->Clone("h_detected"); h_escaped->SetTitle("frac detected");
-    TH2D* h_hitPMT = (TH2D*) h_absorbed->Clone("h_hitPMT"); h_escaped->SetTitle("frac hit PMT");
-// Per-point path stats for detected photons by PMT side
-    TH2D* h_pathMean_det_p2 = new TH2D("h_pathMean_det_p2", "mean(path) detected, pmt_side=2; x; y",  NstepsX, x0, x1, NstepsY, y0, y1);
-    TH2D* h_pathMean_det_p1 = new TH2D("h_pathMean_det_p1", "mean(path) detected, pmt_side=1; x; y",NstepsX, x0, x1, NstepsY, y0, y1);
-    TH2D* h_pathRMS_det_p2  = new TH2D("h_pathRMS_det_p2", "RMS(path) detected, pmt_side=2; x; y",NstepsX, x0, x1, NstepsY, y0, y1);
-    TH2D* h_pathRMS_det_p1  = new TH2D("h_pathRMS_det_p1", "RMS(path) detected, pmt_side=1; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
-    TH2D* h_detected_p1 = new TH2D("h_detected_p1","N detected, pmt_side=1; x; y",NstepsX, x0, x1, NstepsY, y0, y1);
-    TH2D* h_detected_p2 = new TH2D("h_detected_p2","N detected, pmt_side=2; x; y",NstepsX, x0, x1, NstepsY, y0, y1);
+    TH2D *h_absorbed = new TH2D("h_absorbed", "frac absorbed; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
+    TH2D *h_escaped = (TH2D *)h_absorbed->Clone("h_escaped");
+    h_escaped->SetTitle("frac escaped");
+    TH2D *h_detected = (TH2D *)h_absorbed->Clone("h_detected");
+    h_escaped->SetTitle("frac detected");
+    TH2D *h_hitPMT = (TH2D *)h_absorbed->Clone("h_hitPMT");
+    h_escaped->SetTitle("frac hit PMT");
+    // Per-point path stats for detected photons by PMT side
+    TH2D *h_pathMean_det_p2 = new TH2D("h_pathMean_det_p2", "mean(path) detected, pmt_side=2; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
+    TH2D *h_pathMean_det_p1 = new TH2D("h_pathMean_det_p1", "mean(path) detected, pmt_side=1; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
+    TH2D *h_pathRMS_det_p2 = new TH2D("h_pathRMS_det_p2", "RMS(path) detected, pmt_side=2; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
+    TH2D *h_pathRMS_det_p1 = new TH2D("h_pathRMS_det_p1", "RMS(path) detected, pmt_side=1; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
+    TH2D *h_detected_p1 = new TH2D("h_detected_p1", "N detected, pmt_side=1; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
+    TH2D *h_detected_p2 = new TH2D("h_detected_p2", "N detected, pmt_side=2; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
 
-    double a0,a1,b0,b1;
+    double a0, a1, b0, b1;
     int N;
-    if (x1 - x0 > y1 - y0) {
-        double diff = (x1-x0) - (y1-y0);
+    if (x1 - x0 > y1 - y0)
+    {
+        double diff = (x1 - x0) - (y1 - y0);
         a0 = x0;
         a1 = x1;
         b0 = y0 - diff / 2;
         b1 = y1 + diff / 2;
     }
-    else {
-        double diff = (y1-y0) - (x1-x0) ;
+    else
+    {
+        double diff = (y1 - y0) - (x1 - x0);
         a0 = x0 - diff / 2;
         a1 = x1 + diff / 2;
         b0 = y0;
         b1 = y1;
     }
-    TH2D* h_absorbed_s = new TH2D("h_absorbed_s","frac absorbed scale; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
-    h_absorbed_s->GetXaxis()->SetRangeUser(a0,a1);
-    h_absorbed_s->GetYaxis()->SetRangeUser(b0,b1);
-    TH2D* h_escaped_s = (TH2D*) h_absorbed_s->Clone("h_escaped_s"); h_escaped_s->SetTitle("frac escaped scale");
-    TH2D* h_detected_s = (TH2D*) h_absorbed_s->Clone("h_detected_s"); h_escaped_s->SetTitle("frac detected sclae");
-    TH2D* h_hitPMT_s = (TH2D*) h_absorbed_s->Clone("h_hitPMT_s"); h_escaped_s->SetTitle("frac hit PMT scale");
+    TH2D *h_absorbed_s = new TH2D("h_absorbed_s", "frac absorbed scale; x; y", NstepsX, x0, x1, NstepsY, y0, y1);
+    h_absorbed_s->GetXaxis()->SetRangeUser(a0, a1);
+    h_absorbed_s->GetYaxis()->SetRangeUser(b0, b1);
+    TH2D *h_escaped_s = (TH2D *)h_absorbed_s->Clone("h_escaped_s");
+    h_escaped_s->SetTitle("frac escaped scale");
+    TH2D *h_detected_s = (TH2D *)h_absorbed_s->Clone("h_detected_s");
+    h_escaped_s->SetTitle("frac detected sclae");
+    TH2D *h_hitPMT_s = (TH2D *)h_absorbed_s->Clone("h_hitPMT_s");
+    h_escaped_s->SetTitle("frac hit PMT scale");
     TRandom3 rng(0);
     bool saveTree = false;
-    int ic=0;
-    TCanvas *c1= new TCanvas();
+    int ic = 0;
+    TCanvas *c1 = new TCanvas();
+    TStopwatch swAll;
+    swAll.Start();
+    TStopwatch swRow;
+
     for (ix = 0; ix < NstepsX; ix++)
     {
+        swRow.Start(kTRUE); // reset + start
+
         x = x0 + (x1 - x0) * ix / (NstepsX - 1.0);
 
         for (iy = 0; iy < NstepsY; iy++)
         {
-            rng.SetSeed(12345 + ix*100000 + iy); // optional
+            rng.SetSeed(12345 + ix * 100000 + iy); // optional
 
             y = y0 + (y1 - y0) * iy / (NstepsY - 1.0);
             z = 0.0;
 
-            TString outFile = Form(name+"_%03d_%03d.root", ix, iy);
+            TString outFile = Form(name + "_%03d_%03d.root", ix, iy);
             snprintf(outFileName, sizeof(outFileName), "%s", outFile.Data());
-            printf ("%d/%d %d/%d\t",ix,iy,NstepsX,NstepsY);
             // Make the per-point file
 
+            // RAII: TreeWriter is destroyed each loop, so no leaks as long as ~TreeWriter is defined
+            // TreeWriter wr(outFile.Data(), cfg);
+            int Ndetected = 0;
+            int Nescaped = 0;
+            int Nabsorbed = 0;
+            int NinPMT = 0;
+            int Nreached = 0;
 
-                // RAII: TreeWriter is destroyed each loop, so no leaks as long as ~TreeWriter is defined
-                //TreeWriter wr(outFile.Data(), cfg);
-                int Ndetected = 0;
-                int Nescaped= 0;
-                int Nabsorbed = 0;
-                int NinPMT = 0;
-                int Nreached = 0;
-
-             /*   for (int i = 0; i < Nphot; i++)
-                {
-                    PhotonResult res = PropagateOnePhoton(rng, site, 0, cfg);
-                    wr.Fill(res);
-                    Ndetected = Ndetected + res.detected;
-                    Nescaped = Nescaped +res.escaped;
-                    Nabsorbed= Nabsorbed+res.absorbed;
-                    NinPMT=NinPMT+res.inPMT;
-                    Nreached = Nreached +res.reachedEnd;
-                }
-                wr.Close();
+            /*   for (int i = 0; i < Nphot; i++)
+               {
+                   PhotonResult res = PropagateOnePhoton(rng, site, 0, cfg);
+                   wr.Fill(res);
+                   Ndetected = Ndetected + res.detected;
+                   Nescaped = Nescaped +res.escaped;
+                   Nabsorbed= Nabsorbed+res.absorbed;
+                   NinPMT=NinPMT+res.inPMT;
+                   Nreached = Nreached +res.reachedEnd;
+               }
+               wr.Close();
 */
 
-// accumulators per point
-Long64_t Ntot = 0, Nabs = 0, Nesc = 0, NhPMT = 0, Ndet = 0;
-Long64_t Ndet_p1 = 0, Ndet_p2 = 0;
-long double sum_p1 = 0.0L, sum2_p1 = 0.0L;
-long double sum_p2 = 0.0L, sum2_p2 = 0.0L;
+            // accumulators per point
+            Long64_t Ntot = 0, Nabs = 0, Nesc = 0, NhPMT = 0, Ndet = 0;
+            Long64_t Ndet_p1 = 0, Ndet_p2 = 0;
+            long double sum_p1 = 0.0L, sum2_p1 = 0.0L;
+            long double sum_p2 = 0.0L, sum2_p2 = 0.0L;
 
-TRandom3 rng(0);
-Vec3 site(x,y,z);
-ic++;
-if (ic%20==0) {
-    saveTree = true;
-}
-else {
-    saveTree = false;
-}
-TreeWriter* wr = nullptr;
+            TRandom3 rng(0);
+            Vec3 site(x, y, z);
+            ic++;
+            if (ic % int(NstepsX*NstepsY/33) == 0)
+            {
+                saveTree = true;
+            }
+            else
+            {
+                saveTree = false;
+            }
+            TreeWriter *wr = nullptr;
 
-if (saveTree)     wr=new TreeWriter(outFile.Data(), cfg);
+            if (saveTree)
+                wr = new TreeWriter(outFile.Data(), cfg);
 
+            for (int i = 0; i < Nphot; i++)
+            {
+                PhotonResult res = PropagateOnePhoton(rng, site, 0, cfg);
+                if (saveTree)
+                    wr->Fill(res);
+                Ntot++;
+                Nabs += (res.absorbed != 0);
+                Nesc += (res.escaped != 0);
+                NhPMT += (res.inPMT != 0);
+                Ndet += (res.detected != 0);
 
-for (int i = 0; i < Nphot; i++) {
-    PhotonResult res = PropagateOnePhoton(rng, site, 0, cfg);
-    if (saveTree)
-        wr->Fill(res);
-    Ntot++;
-    Nabs += (res.absorbed != 0);
-    Nesc += (res.escaped  != 0);
-    NhPMT += (res.inPMT   != 0);
-    Ndet += (res.detected != 0);
+                if (res.detected)
+                {
+                    if (res.pmt_side == 1)
+                    {
+                        Ndet_p1++;
+                        sum_p1 += (long double)res.path;
+                        sum2_p1 += (long double)res.path * (long double)res.path;
+                    }
+                    else if (res.pmt_side == 2)
+                    {
+                        Ndet_p2++;
+                        sum_p2 += (long double)res.path;
+                        sum2_p2 += (long double)res.path * (long double)res.path;
+                    }
+                }
+            }
+            if (saveTree)
+                wr->Close();
+            // means + rms
+            double mean_p1 = 0.0, rms_p1 = 0.0;
+            double mean_p2 = 0.0, rms_p2 = 0.0;
 
-    if (res.detected) {
-        if (res.pmt_side == 1) {
-            Ndet_p1++;
-            sum_p1  += (long double)res.path;
-            sum2_p1 += (long double)res.path * (long double)res.path;
-        } else if (res.pmt_side == 2) {
-            Ndet_p2++;
-            sum_p2  += (long double)res.path;
-            sum2_p2 += (long double)res.path * (long double)res.path;
-        }
-    }
-}
-if (saveTree)     wr->Close();
-// means + rms
-double mean_p1 = 0.0, rms_p1 = 0.0;
-double mean_p2 = 0.0, rms_p2 = 0.0;
+            if (Ndet_p1 > 0)
+            {
+                long double m = sum_p1 / (long double)Ndet_p1;
+                long double v = sum2_p1 / (long double)Ndet_p1 - m * m;
+                mean_p1 = (double)m;
+                rms_p1 = (v > 0.0L) ? std::sqrt((double)v) : 0.0;
+            }
+            if (Ndet_p2 > 0)
+            {
+                long double m = sum_p2 / (long double)Ndet_p2;
+                long double v = sum2_p2 / (long double)Ndet_p2 - m * m;
+                mean_p2 = (double)m;
+                rms_p2 = (v > 0.0L) ? std::sqrt((double)v) : 0.0;
+            }
 
-if (Ndet_p1 > 0) {
-    long double m = sum_p1 / (long double)Ndet_p1;
-    long double v = sum2_p1 / (long double)Ndet_p1 - m*m;
-    mean_p1 = (double)m;
-    rms_p1  = (v > 0.0L) ? std::sqrt((double)v) : 0.0;
-}
-if (Ndet_p2 > 0) {
-    long double m = sum_p2 / (long double)Ndet_p2;
-    long double v = sum2_p2 / (long double)Ndet_p2 - m*m;
-    mean_p2 = (double)m;
-    rms_p2  = (v > 0.0L) ? std::sqrt((double)v) : 0.0;
-}
+            total = Ntot;
+            absorbed = Nabs;
+            escaped = Nesc;
+            hitPMT = NhPMT;
+            detected = Ndet;
 
-            total    = Ntot;
-absorbed = Nabs;
-escaped  = Nesc;
-hitPMT   = NhPMT;
-detected = Ndet;
-
-frac_absorbed = (Ntot > 0) ? double(Nabs)/double(Ntot) : 0.0;
-frac_escaped  = (Ntot > 0) ? double(Nesc)/double(Ntot) : 0.0;
-frac_hitPMT   = (Ntot > 0) ? double(NhPMT)/double(Ntot) : 0.0;
-frac_detected = (Ntot > 0) ? double(Ndet)/double(Ntot) : 0.0;
+            frac_absorbed = (Ntot > 0) ? double(Nabs) / double(Ntot) : 0.0;
+            frac_escaped = (Ntot > 0) ? double(Nesc) / double(Ntot) : 0.0;
+            frac_hitPMT = (Ntot > 0) ? double(NhPMT) / double(Ntot) : 0.0;
+            frac_detected = (Ntot > 0) ? double(Ndet) / double(Ntot) : 0.0;
 
             tsum.Fill();
-h_pathMean_det_p1->SetBinContent(ix+1, iy+1, mean_p1);
-h_pathRMS_det_p1 ->SetBinContent(ix+1, iy+1, rms_p1);
-h_pathMean_det_p2->SetBinContent(ix+1, iy+1, mean_p2);
-h_pathRMS_det_p2 ->SetBinContent(ix+1, iy+1, rms_p2);
-h_detected ->SetBinContent(ix+1, iy+1, Ndetected);
-h_detected_s ->SetBinContent(ix+1, iy+1, frac_detected);
-h_absorbed ->SetBinContent(ix+1, iy+1, Nabsorbed);
-h_absorbed_s ->SetBinContent(ix+1, iy+1, frac_absorbed);
-h_escaped ->SetBinContent(ix+1, iy+1, Nescaped);
-h_escaped_s ->SetBinContent(ix+1, iy+1, frac_escaped);
-h_hitPMT ->SetBinContent(ix+1, iy+1, NinPMT);
-h_hitPMT_s ->SetBinContent(ix+1, iy+1, frac_hitPMT);
+            h_pathMean_det_p1->SetBinContent(ix + 1, iy + 1, mean_p1);
+            h_pathRMS_det_p1->SetBinContent(ix + 1, iy + 1, rms_p1);
+            h_pathMean_det_p2->SetBinContent(ix + 1, iy + 1, mean_p2);
+            h_pathRMS_det_p2->SetBinContent(ix + 1, iy + 1, rms_p2);
+            h_detected->SetBinContent(ix + 1, iy + 1, Ndetected);
+            h_detected_s->SetBinContent(ix + 1, iy + 1, frac_detected);
+            h_absorbed->SetBinContent(ix + 1, iy + 1, Nabsorbed);
+            h_absorbed_s->SetBinContent(ix + 1, iy + 1, frac_absorbed);
+            h_escaped->SetBinContent(ix + 1, iy + 1, Nescaped);
+            h_escaped_s->SetBinContent(ix + 1, iy + 1, frac_escaped);
+            h_hitPMT->SetBinContent(ix + 1, iy + 1, NinPMT);
+            h_hitPMT_s->SetBinContent(ix + 1, iy + 1, frac_hitPMT);
 
-printf ("frac detected=%f, absorbed=%f, mean_p1=%f, rms_p1=%f, mean_p2=%f, rms_p2=%f, tot=%f\n",
-        frac_detected, frac_absorbed,
-        mean_p1, rms_p1,
-        mean_p2, rms_p2,
-        frac_detected+frac_absorbed+frac_escaped+frac_hitPMT);
+            bool verbose = false;
+            if (verbose) {
+                printf("%d/%d %d/%d\t", ix, iy, NstepsX, NstepsY);
+                printf("frac detected=%f, absorbed=%f, mean_p1=%f, rms_p1=%f, mean_p2=%f, rms_p2=%f, tot=%f\n",
+                   frac_detected, frac_absorbed,
+                   mean_p1, rms_p1,
+                   mean_p2, rms_p2,
+                   frac_detected + frac_absorbed + frac_escaped + frac_hitPMT);
+                }
+            h_detected_p1->SetBinContent(ix + 1, iy + 1, (double)Ndet_p1);
+            h_detected_p2->SetBinContent(ix + 1, iy + 1, (double)Ndet_p2);
 
-h_detected_p1->SetBinContent(ix+1, iy+1, (double)Ndet_p1);
-h_detected_p2->SetBinContent(ix+1, iy+1, (double)Ndet_p2);
+            swRow.Stop();
+            double secPerRow = swRow.RealTime();
+            double rowsLeft = (NstepsX - 1 - ix);
+
+            std::cout << "Row ix=" << ix
+              << " took real " << swRow.RealTime() << " s"
+              << ", cpu " << swRow.CpuTime() << " s"
+              << " (" << NstepsY << " points)"
+              << "\t ETA ~ " << (secPerRow * rowsLeft / 60.0) << " min\n";
 
             // Optional: draw one event from this point
             // DrawEventSplitViewFromTree(outFile.Data(), 12, true, 0.12);
@@ -445,7 +507,9 @@ h_detected_p2->SetBinContent(ix+1, iy+1, (double)Ndet_p2);
     fsum.cd();
     tsum.Write();
     fsum.Close();
+    swAll.Stop();
+    std::cout << "Total scan time: real " << swAll.RealTime()
+          << " s, cpu " << swAll.CpuTime() << " s\n";
 
-    std::cout << "Wrote summary to " << name+"_summary.root \n";
+    std::cout << "Wrote summary to " << name + "_summary.root \n";
 }
-
