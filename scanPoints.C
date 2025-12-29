@@ -186,7 +186,7 @@ void scanPoints()
     cfg.savePath = false;
 
     // geometry
-    cfg.L = 90.0;
+    cfg.L = 200.0; // was 90
     cfg.W = 30.0;
     cfg.T = 1.0;
     cfg.wrap = 1; // 1=PTFE, 2=Mylar
@@ -226,7 +226,7 @@ void scanPoints()
     y0 = -cfg.W * 0.5 + epsilon;
     y1 = +cfg.W * 0.5 - epsilon;
 
-    int dscan = 1;
+    int dscan = 10;
     const int NstepsX = int((cfg.L - epsilon * 2) / dscan); // scan every dscan cm
     const int NstepsY = int((cfg.W - epsilon * 2) / dscan); // scan every dscan cm
     const int Nphot = 100000;
@@ -376,7 +376,7 @@ void scanPoints()
             TRandom3 rng(0);
             Vec3 site(x, y, z);
             ic++;
-            if (ic % int(NstepsX*NstepsY/33) == 0)
+            if (ic % int(NstepsX * NstepsY / 33) == 0)
             {
                 saveTree = true;
             }
@@ -463,30 +463,31 @@ void scanPoints()
             h_hitPMT_s->SetBinContent(ix + 1, iy + 1, frac_hitPMT);
 
             bool verbose = false;
-            if (verbose) {
+            if (verbose)
+            {
                 printf("%d/%d %d/%d\t", ix, iy, NstepsX, NstepsY);
                 printf("frac detected=%f, absorbed=%f, mean_p1=%f, rms_p1=%f, mean_p2=%f, rms_p2=%f, tot=%f\n",
-                   frac_detected, frac_absorbed,
-                   mean_p1, rms_p1,
-                   mean_p2, rms_p2,
-                   frac_detected + frac_absorbed + frac_escaped + frac_hitPMT);
-                }
+                       frac_detected, frac_absorbed,
+                       mean_p1, rms_p1,
+                       mean_p2, rms_p2,
+                       frac_detected + frac_absorbed + frac_escaped + frac_hitPMT);
+            }
             h_detected_p1->SetBinContent(ix + 1, iy + 1, (double)Ndet_p1);
             h_detected_p2->SetBinContent(ix + 1, iy + 1, (double)Ndet_p2);
-
-            swRow.Stop();
-            double secPerRow = swRow.RealTime();
-            double rowsLeft = (NstepsX - 1 - ix);
-
-            std::cout << "Row ix=" << ix
-              << " took real " << swRow.RealTime() << " s"
-              << ", cpu " << swRow.CpuTime() << " s"
-              << " (" << NstepsY << " points)"
-              << "\t ETA ~ " << (secPerRow * rowsLeft / 60.0) << " min\n";
 
             // Optional: draw one event from this point
             // DrawEventSplitViewFromTree(outFile.Data(), 12, true, 0.12);
         }
+
+        swRow.Stop();
+        double secPerRow = swRow.RealTime();
+        double rowsLeft = (NstepsX - 1 - ix);
+
+        std::cout << "Row ix=" << ix <<"/"<< NstepsX -1 <<" x"<< NstepsY
+                  << " took real " << swRow.RealTime() << " s"
+                  << ", cpu " << swRow.CpuTime() << " s"
+                  << " (" << NstepsY << " points)"
+                  << "\t ETA ~ " << (secPerRow * rowsLeft / 60.0) << " min\n";
     }
     fsum.cd();
     h_detected->Write("h_detected");
@@ -508,8 +509,9 @@ void scanPoints()
     tsum.Write();
     fsum.Close();
     swAll.Stop();
+
     std::cout << "Total scan time: real " << swAll.RealTime()
-          << " s, cpu " << swAll.CpuTime() << " s\n";
+              << " s, cpu " << swAll.CpuTime() << " s\n";
 
     std::cout << "Wrote summary to " << name + "_summary.root \n";
 }
