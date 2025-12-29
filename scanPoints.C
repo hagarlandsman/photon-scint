@@ -5,6 +5,9 @@
 #include "TString.h"
 #include "TROOT.h"
 #include <iostream>
+#include "TH2D.h"
+#include "TCanvas.h"
+#include "TH1D.h"
 
 #include "Geometry.h"
 #include "Vec3.h"
@@ -207,7 +210,7 @@ void scanPoints()
     int dscan=1;
     const int NstepsX = int ((cfg.L-epsilon*2) / dscan); // scan every dscan cm
     const int NstepsY = int ((cfg.W-epsilon*2) / dscan); // scan every dscan cm
-    const int Nphot   = 1000000;
+    const int Nphot   = 100000;
     TString name=Form("out/scint_%d_%d_%d_",int(cfg.L),int(cfg.W),int(cfg.T));
     if (cfg.useWedge) {
         name += Form("wedge_%d_%d_",int(cfg.wedgeLen),int(cfg.wedgeTipW));
@@ -283,7 +286,9 @@ void scanPoints()
     TH2D* h_escaped_s = (TH2D*) h_absorbed_s->Clone("h_escaped_s"); h_escaped_s->SetTitle("frac escaped scale");
     TH2D* h_detected_s = (TH2D*) h_absorbed_s->Clone("h_detected_s"); h_escaped_s->SetTitle("frac detected sclae");
     TH2D* h_hitPMT_s = (TH2D*) h_absorbed_s->Clone("h_hitPMT_s"); h_escaped_s->SetTitle("frac hit PMT scale");
-
+    TRandom3 rng(0);
+    bool saveTree = false;
+    int ic=0;
     TCanvas *c1= new TCanvas();
     for (ix = 0; ix < NstepsX; ix++)
     {
@@ -291,26 +296,26 @@ void scanPoints()
 
         for (iy = 0; iy < NstepsY; iy++)
         {
+            rng.SetSeed(12345 + ix*100000 + iy); // optional
+
             y = y0 + (y1 - y0) * iy / (NstepsY - 1.0);
             z = 0.0;
 
             TString outFile = Form(name+"_%03d_%03d.root", ix, iy);
             snprintf(outFileName, sizeof(outFileName), "%s", outFile.Data());
-
+            printf ("%d/%d %d/%d\t",ix,iy,NstepsX,NstepsY);
             // Make the per-point file
-            TRandom3 rng(0);
-            Vec3 site(x, y, z);
 
 
                 // RAII: TreeWriter is destroyed each loop, so no leaks as long as ~TreeWriter is defined
-                TreeWriter wr(outFile.Data(), cfg);
+                //TreeWriter wr(outFile.Data(), cfg);
                 int Ndetected = 0;
                 int Nescaped= 0;
                 int Nabsorbed = 0;
                 int NinPMT = 0;
                 int Nreached = 0;
 
-                for (int i = 0; i < Nphot; i++)
+             /*   for (int i = 0; i < Nphot; i++)
                 {
                     PhotonResult res = PropagateOnePhoton(rng, site, 0, cfg);
                     wr.Fill(res);
@@ -321,54 +326,101 @@ void scanPoints()
                     Nreached = Nreached +res.reachedEnd;
                 }
                 wr.Close();
+*/
 
-            // Count outcomes in that file
-            printf ("%d/%d %d/%d \t ",ix,NstepsX,iy,NstepsY);
-            printf ("N= det=%d,esc=%d,abs=%d,inPMT=%d, reached=%d sum=%d out of %d \t",Ndetected,Nescaped,Nabsorbed,NinPMT,Nreached,Ndetected+Nescaped+Nabsorbed+NinPMT+Nreached,Nphot,NstepsX*NstepsY);
+// accumulators per point
+Long64_t Ntot = 0, Nabs = 0, Nesc = 0, NhPMT = 0, Ndet = 0;
+Long64_t Ndet_p1 = 0, Ndet_p2 = 0;
+long double sum_p1 = 0.0L, sum2_p1 = 0.0L;
+long double sum_p2 = 0.0L, sum2_p2 = 0.0L;
 
-            Counts c = CountFromFile(outFile.Data(), "tPhot");
-            total    = c.total;
-            absorbed = c.absorbed;
-            escaped  = c.escaped;
-            hitPMT   = c.hitPMT;
-            detected = c.detected;
+TRandom3 rng(0);
+Vec3 site(x,y,z);
+ic++;
+if (ic%20==0) {
+    saveTree = true;
+}
+else {
+    saveTree = false;
+}
+TreeWriter* wr = nullptr;
 
-            frac_absorbed = (total > 0) ? double(absorbed)/double(total) : 0.0;
-            frac_escaped  = (total > 0) ? double(escaped )/double(total) : 0.0;
-            frac_hitPMT   = (total > 0) ? double(hitPMT  )/double(total) : 0.0;
-            frac_detected = (total > 0) ? double(detected)/double(total) : 0.0;
-            printf ("N= det=%f,esc=%f,abs=%f,inPMT=%f, reached=%d out of %d \t",frac_detected,frac_escaped,frac_absorbed,frac_hitPMT,Nphot);
+if (saveTree)     wr=new TreeWriter(outFile.Data(), cfg);
 
-            std::cout << ix << " " << iy << " x=" << x << " y=" << y
-                      << " detFrac=" << frac_detected << "\n";
 
-            // Fill summary tree
+for (int i = 0; i < Nphot; i++) {
+    PhotonResult res = PropagateOnePhoton(rng, site, 0, cfg);
+    if (saveTree)
+        wr->Fill(res);
+    Ntot++;
+    Nabs += (res.absorbed != 0);
+    Nesc += (res.escaped  != 0);
+    NhPMT += (res.inPMT   != 0);
+    Ndet += (res.detected != 0);
+
+    if (res.detected) {
+        if (res.pmt_side == 1) {
+            Ndet_p1++;
+            sum_p1  += (long double)res.path;
+            sum2_p1 += (long double)res.path * (long double)res.path;
+        } else if (res.pmt_side == 2) {
+            Ndet_p2++;
+            sum_p2  += (long double)res.path;
+            sum2_p2 += (long double)res.path * (long double)res.path;
+        }
+    }
+}
+if (saveTree)     wr->Close();
+// means + rms
+double mean_p1 = 0.0, rms_p1 = 0.0;
+double mean_p2 = 0.0, rms_p2 = 0.0;
+
+if (Ndet_p1 > 0) {
+    long double m = sum_p1 / (long double)Ndet_p1;
+    long double v = sum2_p1 / (long double)Ndet_p1 - m*m;
+    mean_p1 = (double)m;
+    rms_p1  = (v > 0.0L) ? std::sqrt((double)v) : 0.0;
+}
+if (Ndet_p2 > 0) {
+    long double m = sum_p2 / (long double)Ndet_p2;
+    long double v = sum2_p2 / (long double)Ndet_p2 - m*m;
+    mean_p2 = (double)m;
+    rms_p2  = (v > 0.0L) ? std::sqrt((double)v) : 0.0;
+}
+
+            total    = Ntot;
+absorbed = Nabs;
+escaped  = Nesc;
+hitPMT   = NhPMT;
+detected = Ndet;
+
+frac_absorbed = (Ntot > 0) ? double(Nabs)/double(Ntot) : 0.0;
+frac_escaped  = (Ntot > 0) ? double(Nesc)/double(Ntot) : 0.0;
+frac_hitPMT   = (Ntot > 0) ? double(NhPMT)/double(Ntot) : 0.0;
+frac_detected = (Ntot > 0) ? double(Ndet)/double(Ntot) : 0.0;
+
             tsum.Fill();
-            h_detected->SetBinContent(ix+1,iy+1,detected);
-            h_absorbed->SetBinContent(ix+1,iy+1,absorbed);
-            h_escaped->SetBinContent(ix+1,iy+1,escaped);
-            h_hitPMT->SetBinContent(ix+1,iy+1,hitPMT);
-            h_detected_s->SetBinContent(ix+1,iy+1,frac_detected);
-            h_absorbed_s->SetBinContent(ix+1,iy+1,frac_absorbed);
-            h_escaped_s->SetBinContent(ix+1,iy+1,frac_escaped);
-            h_hitPMT_s->SetBinContent(ix+1,iy+1,frac_hitPMT);
+h_pathMean_det_p1->SetBinContent(ix+1, iy+1, mean_p1);
+h_pathRMS_det_p1 ->SetBinContent(ix+1, iy+1, rms_p1);
+h_pathMean_det_p2->SetBinContent(ix+1, iy+1, mean_p2);
+h_pathRMS_det_p2 ->SetBinContent(ix+1, iy+1, rms_p2);
+h_detected ->SetBinContent(ix+1, iy+1, Ndetected);
+h_detected_s ->SetBinContent(ix+1, iy+1, frac_detected);
+h_absorbed ->SetBinContent(ix+1, iy+1, Nabsorbed);
+h_absorbed_s ->SetBinContent(ix+1, iy+1, frac_absorbed);
+h_escaped ->SetBinContent(ix+1, iy+1, Nescaped);
+h_escaped_s ->SetBinContent(ix+1, iy+1, frac_escaped);
+h_hitPMT ->SetBinContent(ix+1, iy+1, NinPMT);
+h_hitPMT_s ->SetBinContent(ix+1, iy+1, frac_hitPMT);
 
-            // Path mean + width (RMS) for detected photons, per side
-            PathStats s2 = PathStatsFromFile(outFile.Data(), 2, "tPhot");
-            PathStats s1 = PathStatsFromFile(outFile.Data(), 1, "tPhot");
+printf ("frac detected=%f, absorbed=%f, mean_p1=%f, rms_p1=%f, mean_p2=%f, rms_p2=%f, tot=%f\n",
+        frac_detected, frac_absorbed,
+        mean_p1, rms_p1,
+        mean_p2, rms_p2,
+        frac_detected+frac_absorbed+frac_escaped+frac_hitPMT);
 
-// Fill 2D maps. If no entries, leave 0 (or you can set to -1 as a sentinel).
-            h_pathMean_det_p2->SetBinContent(ix+1, iy+1, (s2.n > 0) ? s2.mean : 0.0);
-            h_pathRMS_det_p2 ->SetBinContent(ix+1, iy+1, (s2.n > 0) ? s2.rms  : 0.0);
-
-            h_pathMean_det_p1->SetBinContent(ix+1, iy+1, (s1.n > 0) ? s1.mean : 0.0);
-            h_pathRMS_det_p1 ->SetBinContent(ix+1, iy+1, (s1.n > 0) ? s1.rms  : 0.0);
-
-            Long64_t det_p1 = CountDetectedSideFromFile(outFile.Data(), 1, "tPhot");
-            Long64_t det_p2 = CountDetectedSideFromFile(outFile.Data(), 2, "tPhot");
-
-            h_detected_p1->SetBinContent(ix+1, iy+1, (double)det_p1);
-            h_detected_p2->SetBinContent(ix+1, iy+1, (double)det_p2);
+h_detected_p1->SetBinContent(ix+1, iy+1, (double)Ndet_p1);
+h_detected_p2->SetBinContent(ix+1, iy+1, (double)Ndet_p2);
 
             // Optional: draw one event from this point
             // DrawEventSplitViewFromTree(outFile.Data(), 12, true, 0.12);

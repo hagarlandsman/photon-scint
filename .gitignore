@@ -1,0 +1,19 @@
+# ROOT files
+*.root
+
+# Shared libraries
+*.pcm
+*.o
+*.a
+*.exe
+
+# ROOT compiled macros
+*_C.so
+*_C.d
+*_C_ACLiC_dict.cxx
+
+*_cxx.so
+*_cxx.d
+
+*.so
+*.d
