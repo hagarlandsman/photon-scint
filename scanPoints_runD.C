@@ -177,7 +177,7 @@ auto mirrorBin = [](int b, int nb) { return nb - b + 1; };
 
 // ------------------------------
 // Main scan
-void scanPoints()
+void scanPoints_runD()
 {
     // If you run this as a ROOT macro, you can still compile-load your project files like this
     gROOT->ProcessLine(".L TreeWriter.cxx+");
@@ -192,10 +192,11 @@ void scanPoints()
     cfg.dScan = 2.0; // cm
 
     // geometry
-    cfg.L = 200.0; // was 90
-    cfg.W = 30.0;
+    cfg.L = 140.0; // was 90
+    cfg.W = 10.0; // was 30
     cfg.T = 1.0;
     cfg.wrap = 1; // 1=PTFE, 2=Mylar
+    const int Nphot = 100000;
 
     // optics
     cfg.nScint = 1.58;
@@ -244,7 +245,6 @@ void scanPoints()
     if (cfg.mirrory)
         NstepsY = NstepsY_half;
 
-    const int Nphot = 1000000;
     TString name = Form("out/scint_%d_%d_%d_", int(cfg.L), int(cfg.W), int(cfg.T));
     if (cfg.useWedge)
     {

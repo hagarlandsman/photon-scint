@@ -32,7 +32,9 @@ struct OpticsConfig
 
     // toggles
     bool savePath = false;
-
+    bool mirrorx = true;
+    bool mirrory = true;
+    double dScan = 2.0; // cm
     // wedge parameters
     bool useWedge = false;
     double wedgeLen = 20.0; // cm
