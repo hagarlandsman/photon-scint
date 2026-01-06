@@ -1,222 +1,74 @@
 #include "Transport.h"
-#include "TRandom3.h"
-#include "Vec3.h"
-#include "OpticsConfig.h"
 #include "Geometry.h"
 #include "TMath.h"
 #include <cmath>
 #include <algorithm>
+#include <iostream>
 
-PhotonResult PropagateOnePhoton(TRandom3 &rng, const Vec3 &sitePos, int site_number, const OpticsConfig &cfg);
+using V3 = ROOT::Math::XYZVector;
+
+// You call this, so define it here (or include the header that defines it).
+
 
 PhotonResult PropagateOnePhoton(
     TRandom3 &rng,
-    const Vec3 &sitePos,
+    const V3 &sitePos,
     int site_number,
-    const OpticsConfig &cfg)
+    const OpticsConfig &cfg,
+    const std::vector<V3> &normals,
+    const std::vector<V3> &pointPlane
+)
 {
+
+    bool debug=false;
+    if (debug) printf ("  sitePos=(%f, %f, %f), site_number=%d\n", sitePos.x(), sitePos.y(), sitePos.z(), site_number);
     PhotonResult r;
     r.site_number = site_number;
-    r.x0 = sitePos.x;
-    r.y0 = sitePos.y;
-    r.z0 = sitePos.z;
+    r.x0 = sitePos.x();
+    r.y0 = sitePos.y();
+    r.z0 = sitePos.z();
+
     double L = cfg.L;
     double T = cfg.T;
     double W = cfg.W;
-    int wrap = cfg.wrap;
-
-    const int PTFE = (wrap == 1);
-    const int mylar = (wrap == 2);
 
     double sinThetaC = cfg.nOut / cfg.nScint;
-    if (sinThetaC >= 1.0)
-        sinThetaC = 0.999999;
+    if (sinThetaC >= 1.0) sinThetaC = 0.999999;
     double cosThetaC = std::cos(std::asin(sinThetaC));
 
-    Vec3 pos = sitePos;
-    Vec3 dir = Unit(SampleIsotropic(rng));
-
+    V3 pos = sitePos;
+    V3 dir = SampleIsotropic(rng).Unit();
+    //dir=V3(0,1,0);
     if (cfg.savePath)
     {
+        if (debug)  cout<<"Saving path...\n";
         r.xPath.clear();
         r.yPath.clear();
         r.zPath.clear();
-        r.xPath.push_back((float)pos.x);
-        r.yPath.push_back((float)pos.y);
-        r.zPath.push_back((float)pos.z);
+        r.xPath.push_back((float)pos.x());
+        r.yPath.push_back((float)pos.y());
+        r.zPath.push_back((float)pos.z());
     }
-
-    for (int step = 0; step < cfg.maxSteps; step++)
+    for (int step = 0; step < cfg.maxSteps; ++step)
     {
-
-        // Candidate intersections with standard box
-        double tx = 1e99;
-        int xPlane = -1;
-        if (dir.x > 1e-15)
-        {
-            tx = (L - pos.x) / dir.x;
-            xPlane = 1;
-        }
-        if (dir.x < -1e-15)
-        {
-            tx = (0.0 - pos.x) / dir.x;
-            xPlane = 0;
-        }
-
-        double tyP = 1e99, tyM = 1e99;
-        if (dir.y > 1e-15)
-            tyP = (W / 2.0 - pos.y) / dir.y;
-        if (dir.y < -1e-15)
-            tyM = (-W / 2.0 - pos.y) / dir.y;
-
-        double tzP = 1e99, tzM = 1e99;
-        if (dir.z > 1e-15)
-            tzP = (T / 2.0 - pos.z) / dir.z;
-        if (dir.z < -1e-15)
-            tzM = (-T / 2.0 - pos.z) / dir.z;
-
-        // Optional wedge planes: y = +/- yMax(x) in wedge regions (taper in y only)
-        double tWedgeP = 1e99, tWedgeM = 1e99;
-        int wedgeSide = 0; // 0 none, 1 left, 2 right
-
-        if (cfg.useWedge && cfg.wedgeLen > 0 && cfg.wedgeTipW > 0 && cfg.wedgeTipW <= W)
-        {
-
-            if (InLeftWedge(pos.x, cfg.wedgeLen))
-                wedgeSide = 1;
-            else if (InRightWedge(pos.x, L, cfg.wedgeLen))
-                wedgeSide = 2;
-
-            if (wedgeSide != 0)
-            {
-
-                double a = 0.5 * cfg.wedgeTipW;
-                double b = (0.5 * W - 0.5 * cfg.wedgeTipW) / cfg.wedgeLen; // >= 0
-
-                // For left: yMax = a + b*x
-                // For right: yMax = a + b*(L-x) = (a + b*L) - b*x
-                // We solve intersections with:
-                //   y(t) = +yMax(x(t))
-                //   y(t) = -yMax(x(t))
-
-                // + surface: y - yMax(x) = 0
-                {
-                    double denom = 0.0;
-                    double rhs = 0.0;
-
-                    if (wedgeSide == 1)
-                    {
-                        // y - (a + b x) = 0 -> t*(dy - b*dx) = a + b*x0 - y0
-                        denom = dir.y - b * dir.x;
-                        rhs = a + b * pos.x - pos.y;
-                    }
-                    else
-                    {
-                        // y - ((a + bL) - b x) = 0 -> y - a0 + b x = 0
-                        // t*(dy + b*dx) = a0 - b*x0 - y0, with a0 = a + bL
-                        double a0 = a + b * L;
-                        denom = dir.y + b * dir.x;
-                        rhs = a0 - b * pos.x - pos.y;
-                    }
-
-                    if (std::fabs(denom) > 1e-15)
-                    {
-                        double t = rhs / denom;
-                        if (t > 1e-12)
-                        {
-                            double xh = pos.x + t * dir.x;
-                            double zh = pos.z + t * dir.z;
-                            bool okx = (wedgeSide == 1) ? (xh >= 0.0 && xh <= cfg.wedgeLen)
-                                                        : (xh >= L - cfg.wedgeLen && xh <= L);
-                            if (okx && std::fabs(zh) <= T / 2.0)
-                                tWedgeP = t;
-                        }
-                    }
-                }
-
-                // - surface: y + yMax(x) = 0
-                {
-                    double denom = 0.0;
-                    double rhs = 0.0;
-
-                    if (wedgeSide == 1)
-                    {
-                        // y + (a + b x) = 0 -> t*(dy + b*dx) = -(a + b*x0) - y0
-                        denom = dir.y + b * dir.x;
-                        rhs = -(a + b * pos.x) - pos.y;
-                    }
-                    else
-                    {
-                        // y + ((a + bL) - b x) = 0 -> y + a0 - b x = 0
-                        // t*(dy - b*dx) = -a0 + b*x0 - y0
-                        double a0 = a + b * L;
-                        denom = dir.y - b * dir.x;
-                        rhs = -a0 + b * pos.x - pos.y;
-                    }
-
-                    if (std::fabs(denom) > 1e-15)
-                    {
-                        double t = rhs / denom;
-                        if (t > 1e-12)
-                        {
-                            double xh = pos.x + t * dir.x;
-                            double zh = pos.z + t * dir.z;
-                            bool okx = (wedgeSide == 1) ? (xh >= 0.0 && xh <= cfg.wedgeLen)
-                                                        : (xh >= L - cfg.wedgeLen && xh <= L);
-                            if (okx && std::fabs(zh) <= T / 2.0)
-                                tWedgeM = t;
-                        }
-                    }
-                }
-
-                // Inside wedge region, the wedge replaces the full y=+-W/2 planes
-                tyP = 1e99;
-                tyM = 1e99;
-            }
-        }
-
-        // Pick the nearest intersection
-        double tmin = 1e99;
-        int plane = -1;
-        if (tx > 1e-12 && tx < tmin)
-        {
-            tmin = tx;
-            plane = xPlane;
-        }
-        if (tyM > 1e-12 && tyM < tmin)
-        {
-            tmin = tyM;
-            plane = 2;
-        }
-        if (tyP > 1e-12 && tyP < tmin)
-        {
-            tmin = tyP;
-            plane = 3;
-        }
-        if (tzM > 1e-12 && tzM < tmin)
-        {
-            tmin = tzM;
-            plane = 4;
-        }
-        if (tzP > 1e-12 && tzP < tmin)
-        {
-            tmin = tzP;
-            plane = 5;
-        }
-        if (tWedgeP > 1e-12 && tWedgeP < tmin)
-        {
-            tmin = tWedgeP;
-            plane = 6;
-        }
-        if (tWedgeM > 1e-12 && tWedgeM < tmin)
-        {
-            tmin = tWedgeM;
-            plane = 7;
-        }
-
-        if (plane < 0 || tmin > 1e98)
+        double tmin = 0.0;
+        V3 hitPoint;
+       if (debug)  cout<<"Step "<<step<<", pos=("<<pos.x()<<", "<<pos.y()<<", "<<pos.z()<<"), dir=("<<dir.x()<<", "<<dir.y()<<", "<<dir.z()<<")\n";
+        int plane = getIntersectionPlan(normals, pointPlane, pos, dir, tmin, hitPoint, cfg);
+        if (plane >= 0)
+          if (debug)   cout<<"\tHit plane "<<plane<<" at tmin="<<tmin<<", point=("<<hitPoint.x()<<", "<<hitPoint.y()<<", "<<hitPoint.z()<<")\n";
+        if (plane < 0) {
+           if (debug)  cout<<"\t No intersection found, photon escapes. XXXX\n";
             break;
+        }
+        pos = hitPoint;
 
+        if (cfg.savePath)
+                {
+                    r.xPath.push_back((float)hitPoint.x());
+                    r.yPath.push_back((float)hitPoint.y());
+                    r.zPath.push_back((float)hitPoint.z());
+                }
         // Bulk absorption
         if (cfg.absLen > 0)
         {
@@ -227,158 +79,220 @@ PhotonResult PropagateOnePhoton(
                 r.absorbed = 1;
                 r.endPlane = plane;
 
-                r.xf = pos.x + dir.x * tmin;
-                r.yf = pos.y + dir.y * tmin;
-                r.zf = pos.z + dir.z * tmin;
+                r.xf = hitPoint.x();
+                r.yf = hitPoint.y();
+                r.zf = hitPoint.z();
 
-                if (cfg.savePath)
-                {
-                    r.xPath.push_back((float)r.xf);
-                    r.yPath.push_back((float)r.yf);
-                    r.zPath.push_back((float)r.zf);
-                }
+
+               if (debug)  cout<<"\t\tPhoton absorbed in bulk at step "<<step<<", plane "<<plane<<"\n";
                 return r;
             }
         }
 
-        // Move to boundary
-        pos = pos + dir * tmin;
+        // Move
+//        pos = pos + tmin * dir;
         r.path += tmin;
         r.endPlane = plane;
-        r.xf = pos.x;
-        r.yf = pos.y;
-        r.zf = pos.z;
-        if (cfg.savePath)
-        {
-            r.xPath.push_back((float)pos.x);
-            r.yPath.push_back((float)pos.y);
-            r.zPath.push_back((float)pos.z);
-        }
-        if (!InsideActiveVolume(pos.x, pos.y, pos.z, cfg))
+
+        r.xf = pos.x();
+        r.yf = pos.y();
+        r.zf = pos.z();
+
+        if (!isInside(pos, cfg))
         {
             r.escaped = 1;
-            r.endPlane = plane;
+            if (debug)  cout<<"\t\tPhoton escaped active volume at step "<<step<<", plane "<<plane<<"\n";
             return r;
         }
 
         // End planes: detection
-       // Change: end planes (plane 0/1) are no longer an automatic "terminate" unless detected.
-// If photon reaches an end plane but is NOT detected (or not inPMT), we treat that end plane
-// like a reflective boundary: apply TIR, then reflect with probability cfg.Rwrap (else escape).
-//
-// Notes:
-// - I keep the "outside wedge aperture -> escape" behavior as-is (your geometry aperture).
-// - Reflection model on the end plane follows your wrap choice:
-//     PTFE -> diffuse (Lambertian), Mylar -> specular
-// - If you want the end plane to have a different reflectivity than cfg.Rwrap,
-//   add a cfg.Rend and use it below.
-
-        // End planes: detection OR reflection
         if (plane == 0 || plane == 1)
         {
+            /* if (!InsideWedgeAperture(pos.x(), pos.y(), pos.z(), cfg))
 
-            if (!InsideWedgeAperture(pos.x, pos.y, pos.z, cfg))
             {
                 r.escaped = 1;
-                r.endPlane = plane;
+                cout<<"\t\tPhoton escaped through wedge aperture at step "<<step<<", plane "<<plane<<"\n";
                 return r;
             }
-
-            r.inPMT = InsidePMTCircle(pos.y, pos.z, cfg.rPMT) ? 1 : 0;
-
-
-            // If detected -> terminate as before
+            */
+            r.inPMT = InsidePMTCircle(pos.y(), pos.z(), cfg.rPMT) ? 1 : 0;
+            if (debug) printf ("in plane0,1 z=%f \n",pos.z());
             if (r.inPMT)
             {
+                if (debug) cout<<"\t\tPhoton inside PMT circle at step "<<step<<", plane "<<plane<<"\n";
                 r.reachedEnd = 1;
                 r.pmt_side = (plane == 0) ? 1 : 2;
 
-                // Detection probability (only meaningful if it lands in the PMT region, but you currently
-                // compute epsRaysPMT for all y,z - that's fine)
-                r.epsRaysPMT = epsCoupleExp(pos.y, pos.z, cfg.rPMT, cfg.eps0, cfg.lambdaC);
+                r.epsRaysPMT = epsCoupleExp(pos.y(), pos.z(), cfg.rPMT, cfg.eps0, cfg.lambdaC);
                 double pEnd = cfg.epsCouple * cfg.pde * r.epsRaysPMT;
-                if (rng.Uniform() < pEnd )
-                {
-                    r.detected = 1;
-                    r.inPMT = 0;
-                    return r;
-                }
-                else
-                {
-                    r.detected = 0;
-                    r.inPMT = 1;
-                    return r;
-                }
+
+                r.detected = (rng.Uniform() < pEnd) ? 1 : 0;
+                if (debug)  cout<<"\t\tPhoton detected at step "<<step<<", plane "<<plane<<"\n";
+                return r;
             }
         }
 
-
-
-        // Surface normal
-        Vec3 nHat;
-        if (plane == 0)
-            nHat = Vec3(-1.0, 0.0, 0.0);
-        if (plane == 1)
-            nHat = Vec3(+1.0, 0.0, 0.0);
-        if (plane == 2)
-            nHat = Vec3(0, -1, 0);
-        if (plane == 3)
-            nHat = Vec3(0, +1, 0);
-        if (plane == 4)
-            nHat = Vec3(0, 0, -1);
-        if (plane == 5)
-            nHat = Vec3(0, 0, +1);
-
-        if (plane == 6 || plane == 7)
-        {
-            double b = (cfg.wedgeLen > 0) ? (0.5 * W - 0.5 * cfg.wedgeTipW) / cfg.wedgeLen : 0.0;
-
-            if (plane == 6)
-            {
-                // + surface: y = +yMax(x)
-                // Left: F = y - a - b x -> grad = (-b, +1, 0)
-                // Right: F = y - (a + bL) + b x -> grad = (+b, +1, 0)
-                double nx = (wedgeSide == 2) ? +b : -b;
-                nHat = Unit(Vec3(nx, +1.0, 0.0));
-            }
-            else
-            {
-                // - surface: y = -yMax(x)
-                // Left: F = y + a + b x -> outward should be toward -y
-                // Use normal pointing outward: (+b, -1, 0)
-                // Right: F = y + (a + bL) - b x -> outward: (-b, -1, 0)
-                double nx = (wedgeSide == 2) ? -b : +b;
-                nHat = Unit(Vec3(nx, -1.0, 0.0));
-            }
-        }
-
-        nHat = Unit(nHat);
-
-        double cosInc = std::fabs(Dot(dir, nHat));
+        // Reflection
+        V3 nHat = normals[plane].Unit();
+        double cosInc = std::fabs(dir.Dot(nHat));
         bool isTIR = (cosInc < cosThetaC);
 
         if (isTIR)
         {
-            dir = Unit(ReflectSpecular(dir, nHat));
+           if (debug)  cout<<"\t\tTotal internal reflection at step "<<step<<", plane "<<plane<<"\n";
+            dir = ReflectSpecular(dir, nHat).Unit();
             r.nBounces++;
             continue;
         }
-
-        // Non-TIR: reflect with probability Rwrap, else escape
-        if (rng.Uniform() >= cfg.Rwrap)
+       if (debug)  cout<<"\t\tNot TIR at step "<<step<<", plane "<<plane<<"\n";
+        if (rng.Uniform() >= cfg.Rwrap )
         {
+          if (debug)   cout<<"\t\tPhoton escaped lost reflection at step "<<step<<", plane "<<plane<<"  Rwrap="<<cfg.Rwrap<<"\n";
             r.escaped = 1;
             return r;
         }
 
-        // Wrap model: PTFE -> diffuse, Mylar -> specular
-        if (PTFE && !mylar)
-            dir = SampleLambert(-nHat, rng);
+        if (cfg.wrap == 1){
+            dir = SampleLambert(nHat, rng).Unit();
+          if (debug)   cout<<"\t\tDiffuse reflection (PTFE) at step "<<step<<", plane "<<plane<<"\n";
+                }
         else
-            dir = Unit(ReflectSpecular(dir, nHat));
-
+            {dir = ReflectSpecular(dir, nHat).Unit();
+           if (debug)  cout<<"Specular reflection (Mylar) at step "<<step<<", plane "<<plane<<"\n";}
         r.nBounces++;
     }
-
+    cout<<"Warning: max steps reached in photon propagation"<<cfg.maxSteps<<"\n";
     return r;
+}
+
+/*
+int getIntersectionPlan(
+    const std::vector<V3> &normals,
+    const std::vector<V3> &pointPlane,
+    const V3 &start_point,
+    const V3 &direction,
+    double &tOut,
+    V3 &pOut,
+    const OpticsConfig &cfg,
+    double eps
+)
+{
+    int bestPlane = -1;
+    double bestT = 1e99;
+    V3 bestP(0,0,0);
+
+    int nValid = 0;
+
+    int N = (int)normals.size();
+    for (int i = 0; i < N; ++i)
+    {
+        double t;
+        V3 hitPoint;
+
+        bool ok = getIntersectionPoint(normals[i], pointPlane[i], start_point, direction, t, hitPoint, eps);
+        if (!ok) continue;
+
+        // Must be inside the finite face polygon/extent (your isInside)
+        int loc = isInside(hitPoint, cfg.L, cfg.W, cfg.T, cfg.useWedge ? cfg.wedgeLen : 0.0, cfg.useWedge ? cfg.wedgeTipW : 0.0);
+
+        if (loc > 0)
+        {gr
+            nValid++;
+
+            if (t < bestT)
+            {
+                bestT = t;
+                bestPlane = i;
+                bestP = hitPoint;
+            }
+        }
+    }
+
+    if (bestPlane < 0)
+        return -1;
+
+    tOut = bestT;
+    pOut = bestP;
+
+    // if you still want to flag "multi hit" cases:
+    if (nValid > 1)
+        return 999;
+
+    return bestPlane;
+}
+
+*/
+
+inline int getIntersectionPlan(const std::vector<V3> &normals,
+                              const std::vector<V3> &pointPlane,
+                              const V3 &start_point,
+                              const V3 &direction,
+                              double &tOut,
+                              V3 &pOut,
+                              const OpticsConfig &cfg,
+                              double eps )
+{
+    int bestPlane = -1;
+    double bestT = 1e99;
+    V3 bestP;
+
+    for (int i = 0; i < (int)normals.size(); ++i)
+    {
+        double t = 0.0;
+        V3 hitPoint;
+        bool ok = getIntersectionPoint(normals[i], pointPlane[i],
+                                       start_point, direction,
+                                       t, hitPoint, eps);
+
+      //  cout<<" Checking plane "<<i<<": t="<<t<<"  hitPoint=("<<hitPoint.x()<<","<<hitPoint.y()<<","<<hitPoint.z()<<") \n";
+        if (!ok)
+            continue;
+
+        if (t <= eps)
+            continue;
+
+
+        //int loc = isInside(hitPoint, cfg.L, cfg.W, cfg.T, cfg.wedgeLen, cfg.wedgeTipW, 1e-12);
+       // if (loc <= 0) continue;
+
+        if (t < bestT)
+        {
+            bestT = t;
+            bestPlane = i;
+            bestP = hitPoint;
+        }
+    }
+
+    if (bestPlane < 0) return -1;
+
+    tOut = bestT;
+    pOut = bestP;
+    return bestPlane;
+}
+
+
+bool getIntersectionPoint(
+    const V3 &planeNormal,
+    const V3 &planePoint,
+    const V3 &start_point,
+    const V3 &direction,
+    double &tOut,
+    V3 &pOut,
+    double eps
+)
+{
+    tOut = 0.0;
+
+    double denom = planeNormal.Dot(direction);
+    if (std::fabs(denom) < eps)
+        return false;
+
+    double t = planeNormal.Dot(planePoint - start_point) / denom;
+    if (t < 0)
+        return false;
+
+    tOut = t;
+    pOut = start_point + t * direction;
+    return true;
 }
